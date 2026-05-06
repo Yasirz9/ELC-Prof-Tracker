@@ -14,16 +14,105 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      customers: {
+        Row: {
+          created_at: string
+          exchange_id: string
+          mdn: string
+          name: string
+          region: Database["public"]["Enums"]["region"]
+        }
+        Insert: {
+          created_at?: string
+          exchange_id: string
+          mdn: string
+          name: string
+          region: Database["public"]["Enums"]["region"]
+        }
+        Update: {
+          created_at?: string
+          exchange_id?: string
+          mdn?: string
+          name?: string
+          region?: Database["public"]["Enums"]["region"]
+        }
+        Relationships: []
+      }
+      payment_proofs: {
+        Row: {
+          exchange_id: string
+          id: string
+          mdn: string
+          mime_type: string
+          region: Database["public"]["Enums"]["region"]
+          size_bytes: number
+          storage_path: string
+          uploaded_at: string
+        }
+        Insert: {
+          exchange_id: string
+          id?: string
+          mdn: string
+          mime_type: string
+          region: Database["public"]["Enums"]["region"]
+          size_bytes: number
+          storage_path: string
+          uploaded_at?: string
+        }
+        Update: {
+          exchange_id?: string
+          id?: string
+          mdn?: string
+          mime_type?: string
+          region?: Database["public"]["Enums"]["region"]
+          size_bytes?: number
+          storage_path?: string
+          uploaded_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_proofs_mdn_fkey"
+            columns: ["mdn"]
+            isOneToOne: true
+            referencedRelation: "customers"
+            referencedColumns: ["mdn"]
+          },
+        ]
+      }
+      user_roles: {
+        Row: {
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin"
+      region: "MTR" | "FTR"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +239,9 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin"],
+      region: ["MTR", "FTR"],
+    },
   },
 } as const
