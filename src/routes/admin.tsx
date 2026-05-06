@@ -190,11 +190,20 @@ function Dashboard() {
   const [zipping, setZipping] = useState(false);
   const [forbidden, setForbidden] = useState(false);
 
+  async function getToken(): Promise<string> {
+    const { data } = await supabase.auth.getSession();
+    const t = data.session?.access_token;
+    if (!t) throw new Error("Not signed in");
+    return t;
+  }
+
   async function load() {
     setLoading(true);
     try {
+      const accessToken = await getToken();
       const res = await list({
         data: {
+          accessToken,
           region: region === "all" ? undefined : (region as "MTR" | "FTR"),
           exchangeId: exchangeId || undefined,
           search: search || undefined,
