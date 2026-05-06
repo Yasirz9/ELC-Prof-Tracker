@@ -230,7 +230,8 @@ function Dashboard() {
 
   async function handleDownload(p: Proof) {
     try {
-      const { url } = await sign({ data: { storagePath: p.storage_path } });
+      const accessToken = await getToken();
+      const { url } = await sign({ data: { accessToken, storagePath: p.storage_path } });
       window.open(url, "_blank", "noopener,noreferrer");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Download failed");
@@ -240,8 +241,10 @@ function Dashboard() {
   async function handleBulkZip() {
     setZipping(true);
     try {
+      const accessToken = await getToken();
       const res = await zip({
         data: {
+          accessToken,
           region: region === "all" ? undefined : (region as "MTR" | "FTR"),
           exchangeId: exchangeId || undefined,
         },
