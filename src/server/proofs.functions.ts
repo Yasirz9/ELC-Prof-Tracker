@@ -107,6 +107,8 @@ const listSchema = z.object({
   region: z.enum(["MTR", "FTR"]).optional(),
   exchangeId: z.string().min(1).max(64).optional(),
   search: z.string().min(1).max(64).optional(),
+  fromDate: z.string().datetime().optional(),
+  toDate: z.string().datetime().optional(),
 });
 
 export const listProofs = createServerFn({ method: "POST" })
@@ -120,6 +122,8 @@ export const listProofs = createServerFn({ method: "POST" })
     if (data.region) query = query.eq("region", data.region);
     if (data.exchangeId) query = query.eq("exchange_id", data.exchangeId);
     if (data.search) query = query.ilike("mdn", `%${data.search}%`);
+    if (data.fromDate) query = query.gte("uploaded_at", data.fromDate);
+    if (data.toDate) query = query.lte("uploaded_at", data.toDate);
     const { data: rows, error } = await query.limit(1000);
     if (error) throw new Error(error.message);
     return { proofs: rows ?? [] };
