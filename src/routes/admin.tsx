@@ -251,6 +251,8 @@ function Dashboard() {
           accessToken,
           region: region === "all" ? undefined : (region as "MTR" | "FTR"),
           exchangeId: exchangeId || undefined,
+          fromDate: fromDate ? new Date(fromDate + "T00:00:00").toISOString() : undefined,
+          toDate: toDate ? new Date(toDate + "T23:59:59.999").toISOString() : undefined,
         },
       });
       const bin = atob(res.base64);
