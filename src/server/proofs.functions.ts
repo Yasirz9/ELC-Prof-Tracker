@@ -20,7 +20,7 @@ export const getCustomerByMdn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { data: customer, error } = await supabaseAdmin
       .from("customers")
-      .select("mdn, name, region, exchange_id")
+      .select("mdn, name, region, exchange_id, due_amount, discount")
       .eq("mdn", data.mdn)
       .maybeSingle();
     if (error) throw new Error(error.message);
@@ -34,6 +34,7 @@ const uploadSchema = z.object({
   mimeType: z.enum(ALLOWED_MIME_TYPES),
   size: z.number().int().positive().max(MAX_FILE_SIZE),
   fileBase64: z.string().min(1),
+  amountPaid: z.number().nonnegative(),
 });
 
 export const uploadProof = createServerFn({ method: "POST" })
@@ -73,6 +74,7 @@ export const uploadProof = createServerFn({ method: "POST" })
           storage_path: storagePath,
           mime_type: data.mimeType,
           size_bytes: buffer.byteLength,
+          amount_paid: data.amountPaid,
           uploaded_at: new Date().toISOString(),
         },
         { onConflict: "mdn" },
