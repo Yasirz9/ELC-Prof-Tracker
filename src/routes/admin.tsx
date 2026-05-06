@@ -187,6 +187,8 @@ function Dashboard() {
   const [region, setRegion] = useState<string>("all");
   const [exchangeId, setExchangeId] = useState("");
   const [search, setSearch] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [zipping, setZipping] = useState(false);
   const [forbidden, setForbidden] = useState(false);
 
@@ -207,6 +209,8 @@ function Dashboard() {
           region: region === "all" ? undefined : (region as "MTR" | "FTR"),
           exchangeId: exchangeId || undefined,
           search: search || undefined,
+          fromDate: fromDate ? new Date(fromDate + "T00:00:00").toISOString() : undefined,
+          toDate: toDate ? new Date(toDate + "T23:59:59.999").toISOString() : undefined,
         },
       });
       setProofs(res.proofs as Proof[]);
@@ -247,6 +251,8 @@ function Dashboard() {
           accessToken,
           region: region === "all" ? undefined : (region as "MTR" | "FTR"),
           exchangeId: exchangeId || undefined,
+          fromDate: fromDate ? new Date(fromDate + "T00:00:00").toISOString() : undefined,
+          toDate: toDate ? new Date(toDate + "T23:59:59.999").toISOString() : undefined,
         },
       });
       const bin = atob(res.base64);
@@ -335,9 +341,39 @@ function Dashboard() {
                 className="w-44"
               />
             </div>
+            <div className="space-y-2">
+              <Label>From date</Label>
+              <Input
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                className="w-40"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>To date</Label>
+              <Input
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                className="w-40"
+              />
+            </div>
             <Button onClick={load} disabled={loading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Apply filters
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setRegion("all");
+                setExchangeId("");
+                setSearch("");
+                setFromDate("");
+                setToDate("");
+              }}
+            >
+              Clear
             </Button>
             <div className="ml-auto">
               <Button onClick={handleBulkZip} disabled={zipping || proofs.length === 0} variant="default">
