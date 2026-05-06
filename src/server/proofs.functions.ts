@@ -1,7 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import {
   ALLOWED_MIME_TYPES,
   MAX_FILE_SIZE,
@@ -40,7 +39,6 @@ const uploadSchema = z.object({
 export const uploadProof = createServerFn({ method: "POST" })
   .inputValidator((input) => uploadSchema.parse(input))
   .handler(async ({ data }) => {
-    // Verify the customer exists
     const { data: customer, error: cErr } = await supabaseAdmin
       .from("customers")
       .select("mdn, region, exchange_id")
@@ -50,12 +48,8 @@ export const uploadProof = createServerFn({ method: "POST" })
     if (!customer) throw new Error("Customer not found for this MDN.");
 
     const buffer = Buffer.from(data.fileBase64, "base64");
-    if (buffer.byteLength !== data.size) {
-      throw new Error("File size mismatch.");
-    }
-    if (buffer.byteLength > MAX_FILE_SIZE) {
-      throw new Error("File too large.");
-    }
+    if (buffer.byteLength !== data.size) throw new Error("File size mismatch.");
+    if (buffer.byteLength > MAX_FILE_SIZE) throw new Error("File too large.");
 
     const storagePath = buildStoragePath(
       customer.region as Region,
@@ -66,13 +60,9 @@ export const uploadProof = createServerFn({ method: "POST" })
 
     const { error: upErr } = await supabaseAdmin.storage
       .from("payment-proofs")
-      .upload(storagePath, buffer, {
-        contentType: data.mimeType,
-        upsert: true,
-      });
+      .upload(storagePath, buffer, { contentType: data.mimeType, upsert: true });
     if (upErr) throw new Error(upErr.message);
 
-    // Upsert the proof record (uniqueness on mdn)
     const { error: dbErr } = await supabaseAdmin
       .from("payment_proofs")
       .upsert(
@@ -92,24 +82,35 @@ export const uploadProof = createServerFn({ method: "POST" })
     return { ok: true, storagePath };
   });
 
-// ---------- Admin helpers ----------
-async function assertAdmin(supabase: any, userId: string) {
-  const { data, error } = await supabase
+// ---------- Admin auth helper ----------
+async function requireAdmin(accessToken: string): Promise<string> {
+  if (!accessToken) throw new Error("Unauthorized");
+  const { data, error } = await supabaseAdmin.auth.getUser(accessToken);
+  if (error || !data.user) throw new Error("Unauthorized");
+  const userId = data.user.id;
+  const { data: roleRow, error: rErr } = await supabaseAdmin
     .from("user_roles")
     .select("role")
     .eq("user_id", userId)
     .eq("role", "admin")
     .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!data) throw new Error("Forbidden: admin access required.");
+  if (rErr) throw new Error(rErr.message);
+  if (!roleRow) throw new Error("Forbidden: admin access required.");
+  return userId;
 }
 
 // ---------- Admin: list proofs ----------
+const listSchema = z.object({
+  accessToken: z.string().min(1),
+  region: z.enum(["MTR", "FTR"]).optional(),
+  exchangeId: z.string().min(1).max(64).optional(),
+  search: z.string().min(1).max(64).optional(),
+});
+
 export const listProofs = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: { region?: Region; exchangeId?: string; search?: string }) => input)
-  .handler(async ({ data, context }) => {
-    await assertAdmin(context.supabase, context.userId);
+  .inputValidator((input) => listSchema.parse(input))
+  .handler(async ({ data }) => {
+    await requireAdmin(data.accessToken);
     let query = supabaseAdmin
       .from("payment_proofs")
       .select("id, mdn, region, exchange_id, storage_path, mime_type, size_bytes, uploaded_at")
@@ -122,12 +123,16 @@ export const listProofs = createServerFn({ method: "POST" })
     return { proofs: rows ?? [] };
   });
 
-// ---------- Admin: signed URL for one file ----------
+// ---------- Admin: signed URL ----------
+const signSchema = z.object({
+  accessToken: z.string().min(1),
+  storagePath: z.string().min(1).max(512),
+});
+
 export const getSignedUrl = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: { storagePath: string }) => input)
-  .handler(async ({ data, context }) => {
-    await assertAdmin(context.supabase, context.userId);
+  .inputValidator((input) => signSchema.parse(input))
+  .handler(async ({ data }) => {
+    await requireAdmin(data.accessToken);
     const { data: signed, error } = await supabaseAdmin.storage
       .from("payment-proofs")
       .createSignedUrl(data.storagePath, 60 * 5);
@@ -135,17 +140,17 @@ export const getSignedUrl = createServerFn({ method: "POST" })
     return { url: signed.signedUrl };
   });
 
-// ---------- Admin: bulk ZIP download ----------
-const zipScopeSchema = z.object({
+// ---------- Admin: bulk ZIP ----------
+const zipSchema = z.object({
+  accessToken: z.string().min(1),
   region: z.enum(["MTR", "FTR"]).optional(),
   exchangeId: z.string().min(1).max(64).optional(),
 });
 
 export const getBulkZip = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input) => zipScopeSchema.parse(input))
-  .handler(async ({ data, context }) => {
-    await assertAdmin(context.supabase, context.userId);
+  .inputValidator((input) => zipSchema.parse(input))
+  .handler(async ({ data }) => {
+    await requireAdmin(data.accessToken);
 
     let q = supabaseAdmin
       .from("payment_proofs")
@@ -154,9 +159,7 @@ export const getBulkZip = createServerFn({ method: "POST" })
     if (data.exchangeId) q = q.eq("exchange_id", data.exchangeId);
     const { data: rows, error } = await q.limit(2000);
     if (error) throw new Error(error.message);
-    if (!rows || rows.length === 0) {
-      throw new Error("No files match this scope.");
-    }
+    if (!rows || rows.length === 0) throw new Error("No files match this scope.");
 
     const files: Record<string, Uint8Array> = {};
     for (const row of rows) {
@@ -164,12 +167,9 @@ export const getBulkZip = createServerFn({ method: "POST" })
         .from("payment-proofs")
         .download(row.storage_path);
       if (dErr || !blob) continue;
-      const buf = new Uint8Array(await blob.arrayBuffer());
-      files[row.storage_path] = buf;
+      files[row.storage_path] = new Uint8Array(await blob.arrayBuffer());
     }
-    if (Object.keys(files).length === 0) {
-      throw new Error("Failed to fetch files.");
-    }
+    if (Object.keys(files).length === 0) throw new Error("Failed to fetch files.");
 
     files["_manifest.txt"] = strToU8(
       rows
