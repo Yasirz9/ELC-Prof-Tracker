@@ -209,6 +209,8 @@ function Dashboard() {
           region: region === "all" ? undefined : (region as "MTR" | "FTR"),
           exchangeId: exchangeId || undefined,
           search: search || undefined,
+          fromDate: fromDate ? new Date(fromDate + "T00:00:00").toISOString() : undefined,
+          toDate: toDate ? new Date(toDate + "T23:59:59.999").toISOString() : undefined,
         },
       });
       setProofs(res.proofs as Proof[]);
