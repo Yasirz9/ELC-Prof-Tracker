@@ -187,6 +187,8 @@ function Dashboard() {
   const [region, setRegion] = useState<string>("all");
   const [exchangeId, setExchangeId] = useState("");
   const [search, setSearch] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [zipping, setZipping] = useState(false);
   const [forbidden, setForbidden] = useState(false);
 
