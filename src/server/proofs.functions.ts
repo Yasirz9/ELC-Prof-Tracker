@@ -151,6 +151,8 @@ const zipSchema = z.object({
   accessToken: z.string().min(1),
   region: z.enum(["MTR", "FTR"]).optional(),
   exchangeId: z.string().min(1).max(64).optional(),
+  fromDate: z.string().datetime().optional(),
+  toDate: z.string().datetime().optional(),
 });
 
 export const getBulkZip = createServerFn({ method: "POST" })
@@ -163,6 +165,8 @@ export const getBulkZip = createServerFn({ method: "POST" })
       .select("storage_path, region, exchange_id, mdn, mime_type");
     if (data.region) q = q.eq("region", data.region);
     if (data.exchangeId) q = q.eq("exchange_id", data.exchangeId);
+    if (data.fromDate) q = q.gte("uploaded_at", data.fromDate);
+    if (data.toDate) q = q.lte("uploaded_at", data.toDate);
     const { data: rows, error } = await q.limit(2000);
     if (error) throw new Error(error.message);
     if (!rows || rows.length === 0) throw new Error("No files match this scope.");
