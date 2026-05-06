@@ -17,6 +17,8 @@ export type Database = {
       customers: {
         Row: {
           created_at: string
+          discount: number
+          due_amount: number
           exchange_id: string
           mdn: string
           name: string
@@ -24,6 +26,8 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          discount?: number
+          due_amount?: number
           exchange_id: string
           mdn: string
           name: string
@@ -31,6 +35,8 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          discount?: number
+          due_amount?: number
           exchange_id?: string
           mdn?: string
           name?: string
@@ -40,6 +46,7 @@ export type Database = {
       }
       payment_proofs: {
         Row: {
+          amount_paid: number | null
           exchange_id: string
           id: string
           mdn: string
@@ -50,6 +57,7 @@ export type Database = {
           uploaded_at: string
         }
         Insert: {
+          amount_paid?: number | null
           exchange_id: string
           id?: string
           mdn: string
@@ -60,6 +68,7 @@ export type Database = {
           uploaded_at?: string
         }
         Update: {
+          amount_paid?: number | null
           exchange_id?: string
           id?: string
           mdn?: string
