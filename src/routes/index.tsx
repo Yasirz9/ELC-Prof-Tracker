@@ -36,6 +36,7 @@ type Customer = {
   name: string;
   region: "MTR" | "FTR";
   exchange_id: string;
+  executive_sales: string | null;
   due_amount: number;
   discount: number;
 };
@@ -87,6 +88,7 @@ function TrackerPage() {
           name: c.name,
           region: c.region,
           exchange_id: c.exchange_id,
+          executive_sales: c.executive_sales ?? null,
           due_amount: Number(c.due_amount ?? 0),
           discount: Number(c.discount ?? 0),
         });
@@ -249,7 +251,7 @@ function TrackerPage() {
 
                   <div className="grid grid-cols-2 gap-3 pt-2">
                     <Stat label="MDN" value={customer.mdn} mono />
-                    <Stat label="Exchange ID" value={customer.exchange_id} />
+                    <Stat label="Executive Sales" value={customer.executive_sales || "—"} />
                     <Stat label="Due Amount" value={fmt(customer.due_amount)} />
                     <Stat label="Discount" value={fmt(customer.discount)} accent />
                   </div>
