@@ -20,6 +20,7 @@ export type Database = {
           discount: number
           due_amount: number
           exchange_id: string
+          executive_sales: string | null
           mdn: string
           name: string
           region: Database["public"]["Enums"]["region"]
@@ -29,6 +30,7 @@ export type Database = {
           discount?: number
           due_amount?: number
           exchange_id: string
+          executive_sales?: string | null
           mdn: string
           name: string
           region: Database["public"]["Enums"]["region"]
@@ -38,6 +40,7 @@ export type Database = {
           discount?: number
           due_amount?: number
           exchange_id?: string
+          executive_sales?: string | null
           mdn?: string
           name?: string
           region?: Database["public"]["Enums"]["region"]
@@ -48,6 +51,7 @@ export type Database = {
         Row: {
           amount_paid: number | null
           exchange_id: string
+          executive_sales: string | null
           id: string
           mdn: string
           mime_type: string
@@ -59,6 +63,7 @@ export type Database = {
         Insert: {
           amount_paid?: number | null
           exchange_id: string
+          executive_sales?: string | null
           id?: string
           mdn: string
           mime_type: string
@@ -70,6 +75,7 @@ export type Database = {
         Update: {
           amount_paid?: number | null
           exchange_id?: string
+          executive_sales?: string | null
           id?: string
           mdn?: string
           mime_type?: string

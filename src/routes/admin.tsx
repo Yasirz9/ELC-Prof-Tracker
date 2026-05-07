@@ -1,8 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
-import { listProofs, getSignedUrl, getBulkZip } from "@/server/proofs.functions";
+import {
+  listProofs,
+  getSignedUrl,
+  getBulkZip,
+  getExecutiveStats,
+  importCustomers,
+} from "@/server/proofs.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,9 +29,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
-import { Download, LogOut, ShieldCheck, Loader2, Package } from "lucide-react";
+import {
+  Download,
+  LogOut,
+  ShieldCheck,
+  Loader2,
+  Package,
+  Upload as UploadIcon,
+  Users,
+  FileSpreadsheet,
+  TrendingUp,
+} from "lucide-react";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
@@ -43,9 +60,11 @@ type Proof = {
   mdn: string;
   region: "MTR" | "FTR";
   exchange_id: string;
+  executive_sales: string | null;
   storage_path: string;
   mime_type: string;
   size_bytes: number;
+  amount_paid: number | null;
   uploaded_at: string;
 };
 
@@ -54,9 +73,7 @@ function AdminPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
-      setSession(s);
-    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setLoading(false);
@@ -83,26 +100,14 @@ function AdminPage() {
 function LoginCard() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [busy, setBusy] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     try {
-      if (mode === "signin") {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: { emailRedirectTo: `${window.location.origin}/admin` },
-        });
-        if (error) throw error;
-        toast.success("Account created. You can sign in now.");
-        setMode("signin");
-      }
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Auth failed");
     } finally {
@@ -123,24 +128,14 @@ function LoginCard() {
             </div>
             <span className="font-semibold">Admin access</span>
           </div>
-          <CardTitle>{mode === "signin" ? "Sign in" : "Create admin account"}</CardTitle>
-          <CardDescription>
-            {mode === "signin"
-              ? "Authorized admins only."
-              : "After signup, an existing admin must grant you the admin role."}
-          </CardDescription>
+          <CardTitle>Sign in</CardTitle>
+          <CardDescription>Authorized admins only.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={submit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
+              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
@@ -155,15 +150,8 @@ function LoginCard() {
             </div>
             <Button type="submit" className="w-full" disabled={busy}>
               {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {mode === "signin" ? "Sign in" : "Create account"}
+              Sign in
             </Button>
-            <button
-              type="button"
-              className="w-full text-sm text-muted-foreground hover:text-foreground"
-              onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
-            >
-              {mode === "signin" ? "Need an account? Sign up" : "Have an account? Sign in"}
-            </button>
           </form>
         </CardContent>
       </Card>
@@ -177,20 +165,35 @@ function formatBytes(n: number): string {
   return `${(n / 1024 / 1024).toFixed(2)} MB`;
 }
 
+const fmtPKR = (n: number) =>
+  new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(n || 0);
+
 function Dashboard() {
   const list = useServerFn(listProofs);
   const sign = useServerFn(getSignedUrl);
   const zip = useServerFn(getBulkZip);
+  const stats = useServerFn(getExecutiveStats);
+  const importFn = useServerFn(importCustomers);
 
   const [proofs, setProofs] = useState<Proof[]>([]);
   const [loading, setLoading] = useState(true);
   const [region, setRegion] = useState<string>("all");
   const [exchangeId, setExchangeId] = useState("");
+  const [executiveSales, setExecutiveSales] = useState("");
   const [search, setSearch] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [zipping, setZipping] = useState(false);
   const [forbidden, setForbidden] = useState(false);
+
+  const [statRows, setStatRows] = useState<{ executive_sales: string; count: number; total: number }[]>([]);
+  const [totals, setTotals] = useState({ count: 0, amount: 0 });
+  const [statFrom, setStatFrom] = useState("");
+  const [statTo, setStatTo] = useState("");
+  const [statLoading, setStatLoading] = useState(false);
+
+  const [importing, setImporting] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   async function getToken(): Promise<string> {
     const { data } = await supabase.auth.getSession();
@@ -208,6 +211,7 @@ function Dashboard() {
           accessToken,
           region: region === "all" ? undefined : (region as "MTR" | "FTR"),
           exchangeId: exchangeId || undefined,
+          executiveSales: executiveSales || undefined,
           search: search || undefined,
           fromDate: fromDate ? new Date(fromDate + "T00:00:00").toISOString() : undefined,
           toDate: toDate ? new Date(toDate + "T23:59:59.999").toISOString() : undefined,
@@ -227,8 +231,29 @@ function Dashboard() {
     }
   }
 
+  async function loadStats() {
+    setStatLoading(true);
+    try {
+      const accessToken = await getToken();
+      const res = await stats({
+        data: {
+          accessToken,
+          fromDate: statFrom ? new Date(statFrom + "T00:00:00").toISOString() : undefined,
+          toDate: statTo ? new Date(statTo + "T23:59:59.999").toISOString() : undefined,
+        },
+      });
+      setStatRows(res.stats);
+      setTotals({ count: res.totalCount, amount: res.totalAmount });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Stats failed");
+    } finally {
+      setStatLoading(false);
+    }
+  }
+
   useEffect(() => {
     load();
+    loadStats();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -251,6 +276,7 @@ function Dashboard() {
           accessToken,
           region: region === "all" ? undefined : (region as "MTR" | "FTR"),
           exchangeId: exchangeId || undefined,
+          executiveSales: executiveSales || undefined,
           fromDate: fromDate ? new Date(fromDate + "T00:00:00").toISOString() : undefined,
           toDate: toDate ? new Date(toDate + "T23:59:59.999").toISOString() : undefined,
         },
@@ -261,10 +287,7 @@ function Dashboard() {
       const blob = new Blob([bytes], { type: "application/zip" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      const tag =
-        region === "all" && !exchangeId
-          ? "all"
-          : `${region === "all" ? "all" : region}${exchangeId ? `-${exchangeId}` : ""}`;
+      const tag = executiveSales || (region === "all" ? "all" : region);
       a.download = `payment-proofs-${tag}.zip`;
       a.click();
       URL.revokeObjectURL(a.href);
@@ -273,6 +296,27 @@ function Dashboard() {
       toast.error(e instanceof Error ? e.message : "ZIP failed");
     } finally {
       setZipping(false);
+    }
+  }
+
+  async function handleCsvImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setImporting(true);
+    try {
+      const text = await f.text();
+      const rows = parseCsv(text);
+      if (rows.length === 0) throw new Error("CSV has no data rows.");
+      const accessToken = await getToken();
+      const res = await importFn({ data: { accessToken, rows } });
+      toast.success(`Imported ${res.count} customers.`);
+      await loadStats();
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Import failed");
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = "";
     }
   }
 
@@ -310,131 +354,378 @@ function Dashboard() {
       </header>
 
       <main className="mx-auto max-w-7xl px-6 py-8">
-        <Card className="mb-6 shadow-[var(--shadow-card)]">
-          <CardContent className="flex flex-wrap items-end gap-3 pt-6">
-            <div className="space-y-2">
-              <Label>Region</Label>
-              <Select value={region} onValueChange={setRegion}>
-                <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="MTR">MTR</SelectItem>
-                  <SelectItem value="FTR">FTR</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Exchange ID</Label>
-              <Input
-                placeholder="e.g. EX-101"
-                value={exchangeId}
-                onChange={(e) => setExchangeId(e.target.value)}
-                className="w-40"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Search MDN</Label>
-              <Input
-                placeholder="MDN…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-44"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>From date</Label>
-              <Input
-                type="date"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-                className="w-40"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>To date</Label>
-              <Input
-                type="date"
-                value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-                className="w-40"
-              />
-            </div>
-            <Button onClick={load} disabled={loading}>
-              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Apply filters
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setRegion("all");
-                setExchangeId("");
-                setSearch("");
-                setFromDate("");
-                setToDate("");
-              }}
-            >
-              Clear
-            </Button>
-            <div className="ml-auto">
-              <Button onClick={handleBulkZip} disabled={zipping || proofs.length === 0} variant="default">
-                {zipping ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Package className="mr-2 h-4 w-4" />
-                )}
-                Download ZIP
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <Tabs defaultValue="overview" className="space-y-6">
+          <TabsList>
+            <TabsTrigger value="overview">
+              <TrendingUp className="mr-2 h-4 w-4" /> Overview
+            </TabsTrigger>
+            <TabsTrigger value="submissions">
+              <FileSpreadsheet className="mr-2 h-4 w-4" /> Submissions
+            </TabsTrigger>
+            <TabsTrigger value="customers">
+              <Users className="mr-2 h-4 w-4" /> Customers
+            </TabsTrigger>
+          </TabsList>
 
-        <Card className="shadow-[var(--shadow-card)]">
-          <CardHeader>
-            <CardTitle>Submissions</CardTitle>
-            <CardDescription>{proofs.length} record(s)</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>MDN</TableHead>
-                  <TableHead>Region</TableHead>
-                  <TableHead>Exchange</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Size</TableHead>
-                  <TableHead>Uploaded</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {proofs.length === 0 && !loading ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
-                      No submissions yet.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  proofs.map((p) => (
-                    <TableRow key={p.id}>
-                      <TableCell className="font-mono">{p.mdn}</TableCell>
-                      <TableCell><Badge variant="secondary">{p.region}</Badge></TableCell>
-                      <TableCell>{p.exchange_id}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{p.mime_type}</TableCell>
-                      <TableCell>{formatBytes(p.size_bytes)}</TableCell>
-                      <TableCell>{new Date(p.uploaded_at).toLocaleString()}</TableCell>
-                      <TableCell className="text-right">
-                        <Button size="sm" variant="outline" onClick={() => handleDownload(p)}>
-                          <Download className="mr-2 h-3.5 w-3.5" /> Open
-                        </Button>
-                      </TableCell>
+          {/* Overview / Stats */}
+          <TabsContent value="overview" className="space-y-6">
+            <Card className="shadow-[var(--shadow-card)]">
+              <CardHeader>
+                <CardTitle>Executive Sales Performance</CardTitle>
+                <CardDescription>
+                  Payment proofs received per Executive Sales person.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="space-y-2">
+                    <Label>From</Label>
+                    <Input
+                      type="date"
+                      value={statFrom}
+                      onChange={(e) => setStatFrom(e.target.value)}
+                      className="w-44"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>To</Label>
+                    <Input
+                      type="date"
+                      value={statTo}
+                      onChange={(e) => setStatTo(e.target.value)}
+                      className="w-44"
+                    />
+                  </div>
+                  <Button onClick={loadStats} disabled={statLoading}>
+                    {statLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Apply
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setStatFrom("");
+                      setStatTo("");
+                      setTimeout(loadStats, 0);
+                    }}
+                  >
+                    Clear
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                  <StatBox label="Total Proofs" value={totals.count.toString()} />
+                  <StatBox label="Total Amount (PKR)" value={fmtPKR(totals.amount)} />
+                  <StatBox label="Executives" value={statRows.length.toString()} />
+                </div>
+
+                <div className="overflow-hidden rounded-lg border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Executive Sales</TableHead>
+                        <TableHead className="text-right">Proofs</TableHead>
+                        <TableHead className="text-right">Total Amount (PKR)</TableHead>
+                        <TableHead className="text-right">Action</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {statRows.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={4} className="py-10 text-center text-muted-foreground">
+                            No data for selected range.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        statRows.map((r) => (
+                          <TableRow key={r.executive_sales}>
+                            <TableCell className="font-medium">{r.executive_sales}</TableCell>
+                            <TableCell className="text-right">
+                              <Badge variant="secondary">{r.count}</Badge>
+                            </TableCell>
+                            <TableCell className="text-right font-mono">{fmtPKR(r.total)}</TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setExecutiveSales(
+                                    r.executive_sales === "(Unassigned)" ? "" : r.executive_sales,
+                                  );
+                                  toast.info("Filter applied. Switch to Submissions tab.");
+                                }}
+                              >
+                                Filter
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Submissions */}
+          <TabsContent value="submissions" className="space-y-6">
+            <Card className="shadow-[var(--shadow-card)]">
+              <CardContent className="flex flex-wrap items-end gap-3 pt-6">
+                <div className="space-y-2">
+                  <Label>Region</Label>
+                  <Select value={region} onValueChange={setRegion}>
+                    <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All</SelectItem>
+                      <SelectItem value="MTR">MTR</SelectItem>
+                      <SelectItem value="FTR">FTR</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Executive Sales</Label>
+                  <Input
+                    placeholder="Name…"
+                    value={executiveSales}
+                    onChange={(e) => setExecutiveSales(e.target.value)}
+                    className="w-48"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Exchange ID</Label>
+                  <Input
+                    placeholder="EXH…"
+                    value={exchangeId}
+                    onChange={(e) => setExchangeId(e.target.value)}
+                    className="w-36"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Search MDN</Label>
+                  <Input
+                    placeholder="MDN…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="w-40"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>From</Label>
+                  <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="w-40" />
+                </div>
+                <div className="space-y-2">
+                  <Label>To</Label>
+                  <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="w-40" />
+                </div>
+                <Button onClick={load} disabled={loading}>
+                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Apply
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setRegion("all");
+                    setExchangeId("");
+                    setExecutiveSales("");
+                    setSearch("");
+                    setFromDate("");
+                    setToDate("");
+                  }}
+                >
+                  Clear
+                </Button>
+                <div className="ml-auto">
+                  <Button onClick={handleBulkZip} disabled={zipping || proofs.length === 0}>
+                    {zipping ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Package className="mr-2 h-4 w-4" />
+                    )}
+                    Download ZIP
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-[var(--shadow-card)]">
+              <CardHeader>
+                <CardTitle>Submissions</CardTitle>
+                <CardDescription>{proofs.length} record(s)</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>MDN</TableHead>
+                      <TableHead>Region</TableHead>
+                      <TableHead>Executive Sales</TableHead>
+                      <TableHead>Exchange</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead>Size</TableHead>
+                      <TableHead>Uploaded</TableHead>
+                      <TableHead className="text-right">Action</TableHead>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {proofs.length === 0 && !loading ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="py-12 text-center text-muted-foreground">
+                          No submissions yet.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      proofs.map((p) => (
+                        <TableRow key={p.id}>
+                          <TableCell className="font-mono">{p.mdn}</TableCell>
+                          <TableCell><Badge variant="secondary">{p.region}</Badge></TableCell>
+                          <TableCell>{p.executive_sales || <span className="text-muted-foreground">—</span>}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{p.exchange_id}</TableCell>
+                          <TableCell className="text-right font-mono">{fmtPKR(Number(p.amount_paid ?? 0))}</TableCell>
+                          <TableCell>{formatBytes(p.size_bytes)}</TableCell>
+                          <TableCell>{new Date(p.uploaded_at).toLocaleString()}</TableCell>
+                          <TableCell className="text-right">
+                            <Button size="sm" variant="outline" onClick={() => handleDownload(p)}>
+                              <Download className="mr-2 h-3.5 w-3.5" /> Open
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Customers (CSV upload) */}
+          <TabsContent value="customers" className="space-y-6">
+            <Card className="shadow-[var(--shadow-card)]">
+              <CardHeader>
+                <CardTitle>Import customers (CSV)</CardTitle>
+                <CardDescription>
+                  Upload a CSV file with all customer columns. Existing rows (matched by MDN) will be updated.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="rounded-lg border bg-muted/30 p-4 text-sm">
+                  <div className="font-medium mb-2">Required columns (header row):</div>
+                  <code className="block rounded bg-background px-3 py-2 text-xs">
+                    mdn,name,region,exchange_id,executive_sales,due_amount,discount
+                  </code>
+                  <ul className="mt-3 list-disc pl-5 text-xs text-muted-foreground space-y-1">
+                    <li><b>region</b> must be <code>MTR</code> or <code>FTR</code></li>
+                    <li><b>mdn</b> 10–15 digits — used as unique key</li>
+                    <li><b>due_amount</b> &amp; <b>discount</b> are numbers (default 0)</li>
+                    <li><b>executive_sales</b> is the sales person's name (optional)</li>
+                  </ul>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept=".csv,text/csv"
+                    onChange={handleCsvImport}
+                    className="hidden"
+                    id="csv-upload"
+                  />
+                  <Button asChild disabled={importing}>
+                    <label htmlFor="csv-upload" className="cursor-pointer">
+                      {importing ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <UploadIcon className="mr-2 h-4 w-4" />
+                      )}
+                      Choose CSV file
+                    </label>
+                  </Button>
+                  <a
+                    href={`data:text/csv;charset=utf-8,${encodeURIComponent(
+                      "mdn,name,region,exchange_id,executive_sales,due_amount,discount\n0300xxxxxxx,Sample Name,MTR,EXH0001,Ali Khan,1500,0\n",
+                    )}`}
+                    download="customers-template.csv"
+                    className="text-sm text-primary underline"
+                  >
+                    Download template
+                  </a>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </main>
     </div>
   );
+}
+
+function StatBox({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border bg-gradient-to-br from-secondary/40 to-secondary/10 p-4">
+      <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className="mt-1 text-2xl font-bold">{value}</div>
+    </div>
+  );
+}
+
+// Tiny CSV parser (handles quoted fields and commas)
+function parseCsv(text: string): Array<{
+  mdn: string;
+  name: string;
+  region: "MTR" | "FTR";
+  exchange_id: string;
+  executive_sales?: string | null;
+  due_amount?: number;
+  discount?: number;
+}> {
+  const lines = text.replace(/\r/g, "").split("\n").filter((l) => l.trim().length > 0);
+  if (lines.length < 2) return [];
+  const splitLine = (line: string): string[] => {
+    const out: string[] = [];
+    let cur = "";
+    let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') {
+        if (inQ && line[i + 1] === '"') {
+          cur += '"';
+          i++;
+        } else inQ = !inQ;
+      } else if (c === "," && !inQ) {
+        out.push(cur);
+        cur = "";
+      } else cur += c;
+    }
+    out.push(cur);
+    return out.map((s) => s.trim());
+  };
+  const header = splitLine(lines[0]).map((h) => h.toLowerCase());
+  const idx = (k: string) => header.indexOf(k);
+  const iMdn = idx("mdn"),
+    iName = idx("name"),
+    iRegion = idx("region"),
+    iExch = idx("exchange_id"),
+    iExec = idx("executive_sales"),
+    iDue = idx("due_amount"),
+    iDisc = idx("discount");
+  if (iMdn < 0 || iName < 0 || iRegion < 0 || iExch < 0) {
+    throw new Error("CSV missing required columns: mdn, name, region, exchange_id");
+  }
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = splitLine(lines[i]);
+    const region = cols[iRegion]?.toUpperCase();
+    if (region !== "MTR" && region !== "FTR") {
+      throw new Error(`Row ${i + 1}: region must be MTR or FTR (got "${cols[iRegion]}")`);
+    }
+    rows.push({
+      mdn: cols[iMdn],
+      name: cols[iName],
+      region: region as "MTR" | "FTR",
+      exchange_id: cols[iExch],
+      executive_sales: iExec >= 0 ? cols[iExec] || null : null,
+      due_amount: iDue >= 0 && cols[iDue] ? Number(cols[iDue]) : 0,
+      discount: iDisc >= 0 && cols[iDisc] ? Number(cols[iDisc]) : 0,
+    });
+  }
+  return rows;
 }
