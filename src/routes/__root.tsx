@@ -29,14 +29,18 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
+      { title: "ELC Payment Tracker" },
+      { name: "description", content: "Pixel Perfect Replica is a dynamic dashboard application for data visualization and management." },
       { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { property: "og:title", content: "ELC Payment Tracker" },
+      { property: "og:description", content: "Pixel Perfect Replica is a dynamic dashboard application for data visualization and management." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "ELC Payment Tracker" },
+      { name: "twitter:description", content: "Pixel Perfect Replica is a dynamic dashboard application for data visualization and management." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/9d036b94-e35a-4457-9d1a-489da90e1c58/id-preview-83bd1a60--45993b36-27d9-4cfb-afdf-97bdf5feecaf.lovable.app-1778120219286.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/9d036b94-e35a-4457-9d1a-489da90e1c58/id-preview-83bd1a60--45993b36-27d9-4cfb-afdf-97bdf5feecaf.lovable.app-1778120219286.png" },
     ],
     links: [
       {
