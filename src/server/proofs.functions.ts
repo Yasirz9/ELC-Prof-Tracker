@@ -20,7 +20,7 @@ export const getCustomerByMdn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { data: customer, error } = await supabaseAdmin
       .from("customers")
-      .select("mdn, name, region, exchange_id, due_amount, discount")
+      .select("mdn, name, region, exchange_id, executive_sales, due_amount, discount")
       .eq("mdn", data.mdn)
       .maybeSingle();
     if (error) throw new Error(error.message);
@@ -42,7 +42,7 @@ export const uploadProof = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { data: customer, error: cErr } = await supabaseAdmin
       .from("customers")
-      .select("mdn, region, exchange_id")
+      .select("mdn, region, exchange_id, executive_sales")
       .eq("mdn", data.mdn)
       .maybeSingle();
     if (cErr) throw new Error(cErr.message);
@@ -71,6 +71,7 @@ export const uploadProof = createServerFn({ method: "POST" })
           mdn: customer.mdn,
           region: customer.region,
           exchange_id: customer.exchange_id,
+          executive_sales: customer.executive_sales ?? null,
           storage_path: storagePath,
           mime_type: data.mimeType,
           size_bytes: buffer.byteLength,
@@ -106,6 +107,7 @@ const listSchema = z.object({
   accessToken: z.string().min(1),
   region: z.enum(["MTR", "FTR"]).optional(),
   exchangeId: z.string().min(1).max(64).optional(),
+  executiveSales: z.string().min(1).max(128).optional(),
   search: z.string().min(1).max(64).optional(),
   fromDate: z.string().datetime().optional(),
   toDate: z.string().datetime().optional(),
@@ -117,16 +119,55 @@ export const listProofs = createServerFn({ method: "POST" })
     await requireAdmin(data.accessToken);
     let query = supabaseAdmin
       .from("payment_proofs")
-      .select("id, mdn, region, exchange_id, storage_path, mime_type, size_bytes, uploaded_at")
+      .select(
+        "id, mdn, region, exchange_id, executive_sales, storage_path, mime_type, size_bytes, amount_paid, uploaded_at",
+      )
       .order("uploaded_at", { ascending: false });
     if (data.region) query = query.eq("region", data.region);
     if (data.exchangeId) query = query.eq("exchange_id", data.exchangeId);
+    if (data.executiveSales) query = query.eq("executive_sales", data.executiveSales);
     if (data.search) query = query.ilike("mdn", `%${data.search}%`);
     if (data.fromDate) query = query.gte("uploaded_at", data.fromDate);
     if (data.toDate) query = query.lte("uploaded_at", data.toDate);
     const { data: rows, error } = await query.limit(1000);
     if (error) throw new Error(error.message);
     return { proofs: rows ?? [] };
+  });
+
+// ---------- Admin: stats by Executive Sales ----------
+const statsSchema = z.object({
+  accessToken: z.string().min(1),
+  fromDate: z.string().datetime().optional(),
+  toDate: z.string().datetime().optional(),
+});
+
+export const getExecutiveStats = createServerFn({ method: "POST" })
+  .inputValidator((input) => statsSchema.parse(input))
+  .handler(async ({ data }) => {
+    await requireAdmin(data.accessToken);
+    let q = supabaseAdmin
+      .from("payment_proofs")
+      .select("executive_sales, amount_paid, uploaded_at");
+    if (data.fromDate) q = q.gte("uploaded_at", data.fromDate);
+    if (data.toDate) q = q.lte("uploaded_at", data.toDate);
+    const { data: rows, error } = await q.limit(5000);
+    if (error) throw new Error(error.message);
+    const agg = new Map<string, { count: number; total: number }>();
+    let totalCount = 0;
+    let totalAmount = 0;
+    for (const r of rows ?? []) {
+      const key = r.executive_sales || "(Unassigned)";
+      const cur = agg.get(key) ?? { count: 0, total: 0 };
+      cur.count += 1;
+      cur.total += Number(r.amount_paid ?? 0);
+      agg.set(key, cur);
+      totalCount += 1;
+      totalAmount += Number(r.amount_paid ?? 0);
+    }
+    const stats = Array.from(agg.entries())
+      .map(([executive_sales, v]) => ({ executive_sales, count: v.count, total: v.total }))
+      .sort((a, b) => b.count - a.count);
+    return { stats, totalCount, totalAmount };
   });
 
 // ---------- Admin: signed URL ----------
@@ -151,6 +192,7 @@ const zipSchema = z.object({
   accessToken: z.string().min(1),
   region: z.enum(["MTR", "FTR"]).optional(),
   exchangeId: z.string().min(1).max(64).optional(),
+  executiveSales: z.string().min(1).max(128).optional(),
   fromDate: z.string().datetime().optional(),
   toDate: z.string().datetime().optional(),
 });
@@ -162,9 +204,10 @@ export const getBulkZip = createServerFn({ method: "POST" })
 
     let q = supabaseAdmin
       .from("payment_proofs")
-      .select("storage_path, region, exchange_id, mdn, mime_type");
+      .select("storage_path, region, exchange_id, executive_sales, mdn, mime_type");
     if (data.region) q = q.eq("region", data.region);
     if (data.exchangeId) q = q.eq("exchange_id", data.exchangeId);
+    if (data.executiveSales) q = q.eq("executive_sales", data.executiveSales);
     if (data.fromDate) q = q.gte("uploaded_at", data.fromDate);
     if (data.toDate) q = q.lte("uploaded_at", data.toDate);
     const { data: rows, error } = await q.limit(2000);
@@ -183,11 +226,64 @@ export const getBulkZip = createServerFn({ method: "POST" })
 
     files["_manifest.txt"] = strToU8(
       rows
-        .map((r) => `${r.storage_path}\tMDN=${r.mdn}\tregion=${r.region}\texchange=${r.exchange_id}`)
+        .map(
+          (r) =>
+            `${r.storage_path}\tMDN=${r.mdn}\tregion=${r.region}\texchange=${r.exchange_id}\texecutive=${r.executive_sales ?? ""}`,
+        )
         .join("\n"),
     );
 
     const zipped = zipSync(files, { level: 6 });
     const base64 = Buffer.from(zipped).toString("base64");
     return { base64, count: rows.length };
+  });
+
+// ---------- Admin: import customers from CSV ----------
+const importSchema = z.object({
+  accessToken: z.string().min(1),
+  rows: z
+    .array(
+      z.object({
+        mdn: z.string().regex(/^\d{10,15}$/),
+        name: z.string().min(1).max(200),
+        region: z.enum(["MTR", "FTR"]),
+        exchange_id: z.string().min(1).max(64),
+        executive_sales: z.string().max(128).optional().nullable(),
+        due_amount: z.number().nonnegative().optional(),
+        discount: z.number().nonnegative().optional(),
+      }),
+    )
+    .min(1)
+    .max(5000),
+});
+
+export const importCustomers = createServerFn({ method: "POST" })
+  .inputValidator((input) => importSchema.parse(input))
+  .handler(async ({ data }) => {
+    await requireAdmin(data.accessToken);
+    const payload = data.rows.map((r) => ({
+      mdn: r.mdn,
+      name: r.name,
+      region: r.region,
+      exchange_id: r.exchange_id,
+      executive_sales: r.executive_sales || null,
+      due_amount: r.due_amount ?? 0,
+      discount: r.discount ?? 0,
+    }));
+    const { error } = await supabaseAdmin
+      .from("customers")
+      .upsert(payload, { onConflict: "mdn" });
+    if (error) throw new Error(error.message);
+
+    // Also propagate executive_sales updates onto existing payment_proofs rows
+    for (const r of payload) {
+      if (r.executive_sales !== null) {
+        await supabaseAdmin
+          .from("payment_proofs")
+          .update({ executive_sales: r.executive_sales })
+          .eq("mdn", r.mdn);
+      }
+    }
+
+    return { ok: true, count: payload.length };
   });
