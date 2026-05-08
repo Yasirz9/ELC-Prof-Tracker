@@ -1,54 +1,43 @@
-# Payment Proof System
+## Plan: Multi-feature Admin Upgrade
 
-Adapting the Next.js + Supabase design from your README to this TanStack Start + Lovable Cloud project.
+### 1. ZIP + Excel Attachment
+- In `getBulkZip` server fn, also generate an Excel (`.xlsx`) summary using `exceljs` (or `xlsx` lib).
+- Excel will include ALL customers from `customers` table joined with `payment_proofs`:
+  - Columns: MDN, Name, Region, Exchange ID, Executive Sales, Due Amount, Discount, Proof Status (Submitted/Pending), Amount Paid, Uploaded At, Storage Path.
+- Embed as `_summary.xlsx` inside the ZIP.
 
-## What gets built
+### 2. Date-wise ZIP Structure
+- Restructure paths inside ZIP to: `{DD MMM}/{Region}/{filename}` (e.g. `07 May/MTR/0300xxxxxxx.jpg`).
+- Drop exchange-level folder.
+- Only regions with data appear (natural — only matched rows produce folders).
 
-### User-facing upload page (`/`)
-- Form: enter MDN → fetches customer record (region, exchange ID, name) → shows confirmation → upload file
-- Validates file: jpeg / png / pdf, max 5 MB
-- File stored at `<region>/<exchange_id>/<mdn>.<ext>` (original filename discarded)
-- Upserts a `payment_proofs` row
+### 3. User Management (Super Admin)
+- Add `super_admin` to `app_role` enum + region column on `user_roles` (nullable; null = all regions for super_admin).
+- Migration: `region` column on `user_roles`, helper functions `is_super_admin(uuid)`, `get_user_region(uuid)`.
+- Designate `muhammad.yasir7` as super_admin.
+- Admin tab "Users":
+  - Super admin sees user list + create form (email, password, region MTR/FTR/All, role admin).
+  - Server fns: `listUsers`, `createUser`, `deleteUser`, `updateUserRegion` — all guarded with `requireSuperAdmin`.
+- Region scoping: every admin server fn (`listProofs`, `getExecutiveStats`, `getBulkZip`, `importCustomers`) reads caller's region; if non-null, force-filter to that region and reject mismatched filters.
 
-### Admin dashboard (`/admin`, protected)
-- Login via Lovable Cloud auth (email/password)
-- Table of all proofs with filters (region, exchange ID, search by MDN)
-- Per-file download (signed URL) + bulk ZIP download by scope (all / region / exchange)
-- Admin role enforced via `user_roles` table (separate from profiles, with `has_role` security-definer function)
+### 4. CSV Upload Hardening
+- Client-side: detect missing required columns (mdn, name, region, exchange_id), show row-level errors, show duplicate MDN warnings (within file), preview count, success/error toast with counts.
+- Server-side `importCustomers`: return `{ inserted, updated, skipped, errors[] }` instead of just count; validate region enum; trim whitespace; reject empty/invalid rows with row index in error message.
 
-### Backend (Lovable Cloud)
-- **Tables**
-  - `customers` — `mdn` (pk), `name`, `region` (enum: MTR/FTR), `exchange_id`
-  - `payment_proofs` — `id`, `mdn` (fk), `region`, `exchange_id`, `storage_path`, `mime_type`, `size_bytes`, `uploaded_at`
-  - `user_roles` — `user_id`, `role` (admin)
-- **RLS**
-  - `customers`: public read (for MDN lookup on the upload page)
-  - `payment_proofs`: insert allowed for anyone (public upload), select/delete only for admins via `has_role`
-  - `user_roles`: select own row only
-- **Storage bucket** `payment-proofs` (private)
-- **Server functions** (`createServerFn`)
-  - `getCustomerByMdn(mdn)` — public
-  - `uploadProof({ mdn, file })` — public, validates + stores + upserts
-  - `listProofs(filters)` — admin only
-  - `getSignedUrl(path)` — admin only
-  - `getBulkZip(scope)` — admin only, streams a ZIP of signed file contents
+### 5. Overview UI Redesign
+- Replace card grid with a sortable table:
+  - Columns: Executive Sales, Region, Proof Count, Total Amount (PKR), Avg Amount.
+  - Sticky header, zebra rows, hover, sort indicators.
+- Add Region filter (All / MTR / FTR) alongside existing date range.
+- Top KPI strip kept (Total Proofs, Total Amount, Active Executives) but cleaner.
+- For non-super-admin users with assigned region, region filter is locked to their region.
 
-## Tech notes (technical)
+### Technical Notes
+- Use `exceljs` (Worker-compatible, pure JS).
+- Migration file for `super_admin` role + `region` on `user_roles`.
+- Update `requireAdmin` → returns `{ userId, role, region }`; new `requireSuperAdmin`.
+- Update `src/integrations/supabase/types.ts` will regenerate after migration (auto).
+- New file: `src/server/users.functions.ts` for user mgmt fns.
 
-- Use `createServerFn` (not Edge Functions) for all backend logic, per TanStack pattern.
-- `requireSupabaseAuth` middleware on admin functions; check `has_role(uid, 'admin')` server-side.
-- ZIP generation via `fflate` (pure JS, Worker-compatible — `archiver`/`yazl` won't work in Cloudflare Workers).
-- Public upload uses the anon client; admin reads use the authenticated client. No service-role from client paths.
-- Region as Postgres enum (`MTR`, `FTR`) matching the README.
-- File naming + path builder kept identical to the README spec.
-
-## Out of scope (for v1)
-- Admin user signup UI — first admin is granted via SQL after signup (I'll show you how).
-- Email notifications, audit log, multi-file uploads per MDN.
-
-## Seed data
-I'll add a couple of sample customers so you can test the upload flow immediately.
-
----
-
-Ready to build. Confirm and I'll enable Lovable Cloud and ship it.
+### Out of scope (confirm if needed)
+- Login UI changes — current admin login already works; no separate "regional user" login flow beyond the same auth.
