@@ -97,16 +97,19 @@ export type Database = {
       user_roles: {
         Row: {
           id: string
+          region: Database["public"]["Enums"]["region"] | null
           role: Database["public"]["Enums"]["app_role"]
           user_id: string
         }
         Insert: {
           id?: string
+          region?: Database["public"]["Enums"]["region"] | null
           role: Database["public"]["Enums"]["app_role"]
           user_id: string
         }
         Update: {
           id?: string
+          region?: Database["public"]["Enums"]["region"] | null
           role?: Database["public"]["Enums"]["app_role"]
           user_id?: string
         }
@@ -117,6 +120,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_admin_region: {
+        Args: { _user_id: string }
+        Returns: Database["public"]["Enums"]["region"]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -124,6 +131,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_super_admin: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
       app_role: "admin" | "super_admin"
