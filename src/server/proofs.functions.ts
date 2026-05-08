@@ -9,6 +9,7 @@ import {
   type Region,
 } from "@/lib/proof-utils";
 import { zipSync, strToU8 } from "fflate";
+import ExcelJS from "exceljs";
 
 // ---------- Public: lookup customer ----------
 export const getCustomerByMdn = createServerFn({ method: "POST" })
@@ -86,20 +87,48 @@ export const uploadProof = createServerFn({ method: "POST" })
   });
 
 // ---------- Admin auth helper ----------
-async function requireAdmin(accessToken: string): Promise<string> {
+type AdminCtx = { userId: string; role: "admin" | "super_admin"; region: "MTR" | "FTR" | null };
+
+async function requireAdmin(accessToken: string): Promise<AdminCtx> {
   if (!accessToken) throw new Error("Unauthorized");
   const { data, error } = await supabaseAdmin.auth.getUser(accessToken);
   if (error || !data.user) throw new Error("Unauthorized");
   const userId = data.user.id;
-  const { data: roleRow, error: rErr } = await supabaseAdmin
+  const { data: rows, error: rErr } = await supabaseAdmin
     .from("user_roles")
-    .select("role")
+    .select("role, region")
     .eq("user_id", userId)
-    .eq("role", "admin")
-    .maybeSingle();
+    .in("role", ["admin", "super_admin"]);
   if (rErr) throw new Error(rErr.message);
-  if (!roleRow) throw new Error("Forbidden: admin access required.");
-  return userId;
+  if (!rows || rows.length === 0) throw new Error("Forbidden: admin access required.");
+  const sup = rows.find((r) => r.role === "super_admin");
+  if (sup) return { userId, role: "super_admin", region: null };
+  const adm = rows[0];
+  return {
+    userId,
+    role: "admin",
+    region: (adm.region as "MTR" | "FTR" | null) ?? null,
+  };
+}
+
+async function requireSuperAdmin(accessToken: string): Promise<string> {
+  const ctx = await requireAdmin(accessToken);
+  if (ctx.role !== "super_admin") throw new Error("Forbidden: super admin only.");
+  return ctx.userId;
+}
+
+// Apply region scope: if admin has assigned region, force-filter to it
+function scopeRegion(
+  ctx: AdminCtx,
+  requested?: "MTR" | "FTR",
+): "MTR" | "FTR" | undefined {
+  if (ctx.region) {
+    if (requested && requested !== ctx.region) {
+      throw new Error("Forbidden: outside your region.");
+    }
+    return ctx.region;
+  }
+  return requested;
 }
 
 // ---------- Admin: list proofs ----------
@@ -116,27 +145,29 @@ const listSchema = z.object({
 export const listProofs = createServerFn({ method: "POST" })
   .inputValidator((input) => listSchema.parse(input))
   .handler(async ({ data }) => {
-    await requireAdmin(data.accessToken);
+    const ctx = await requireAdmin(data.accessToken);
+    const effRegion = scopeRegion(ctx, data.region);
     let query = supabaseAdmin
       .from("payment_proofs")
       .select(
         "id, mdn, region, exchange_id, executive_sales, storage_path, mime_type, size_bytes, amount_paid, uploaded_at",
       )
       .order("uploaded_at", { ascending: false });
-    if (data.region) query = query.eq("region", data.region);
+    if (effRegion) query = query.eq("region", effRegion);
     if (data.exchangeId) query = query.eq("exchange_id", data.exchangeId);
     if (data.executiveSales) query = query.eq("executive_sales", data.executiveSales);
     if (data.search) query = query.ilike("mdn", `%${data.search}%`);
     if (data.fromDate) query = query.gte("uploaded_at", data.fromDate);
     if (data.toDate) query = query.lte("uploaded_at", data.toDate);
-    const { data: rows, error } = await query.limit(1000);
+    const { data: rows, error } = await query.limit(2000);
     if (error) throw new Error(error.message);
-    return { proofs: rows ?? [] };
+    return { proofs: rows ?? [], scope: { region: ctx.region, role: ctx.role } };
   });
 
 // ---------- Admin: stats by Executive Sales ----------
 const statsSchema = z.object({
   accessToken: z.string().min(1),
+  region: z.enum(["MTR", "FTR"]).optional(),
   fromDate: z.string().datetime().optional(),
   toDate: z.string().datetime().optional(),
 });
@@ -144,20 +175,22 @@ const statsSchema = z.object({
 export const getExecutiveStats = createServerFn({ method: "POST" })
   .inputValidator((input) => statsSchema.parse(input))
   .handler(async ({ data }) => {
-    await requireAdmin(data.accessToken);
+    const ctx = await requireAdmin(data.accessToken);
+    const effRegion = scopeRegion(ctx, data.region);
     let q = supabaseAdmin
       .from("payment_proofs")
-      .select("executive_sales, amount_paid, uploaded_at");
+      .select("executive_sales, region, amount_paid, uploaded_at");
+    if (effRegion) q = q.eq("region", effRegion);
     if (data.fromDate) q = q.gte("uploaded_at", data.fromDate);
     if (data.toDate) q = q.lte("uploaded_at", data.toDate);
-    const { data: rows, error } = await q.limit(5000);
+    const { data: rows, error } = await q.limit(10000);
     if (error) throw new Error(error.message);
-    const agg = new Map<string, { count: number; total: number }>();
+    const agg = new Map<string, { count: number; total: number; region: string }>();
     let totalCount = 0;
     let totalAmount = 0;
     for (const r of rows ?? []) {
-      const key = r.executive_sales || "(Unassigned)";
-      const cur = agg.get(key) ?? { count: 0, total: 0 };
+      const key = `${r.executive_sales || "(Unassigned)"}|${r.region}`;
+      const cur = agg.get(key) ?? { count: 0, total: 0, region: r.region };
       cur.count += 1;
       cur.total += Number(r.amount_paid ?? 0);
       agg.set(key, cur);
@@ -165,9 +198,19 @@ export const getExecutiveStats = createServerFn({ method: "POST" })
       totalAmount += Number(r.amount_paid ?? 0);
     }
     const stats = Array.from(agg.entries())
-      .map(([executive_sales, v]) => ({ executive_sales, count: v.count, total: v.total }))
-      .sort((a, b) => b.count - a.count);
-    return { stats, totalCount, totalAmount };
+      .map(([k, v]) => ({
+        executive_sales: k.split("|")[0],
+        region: v.region,
+        count: v.count,
+        total: v.total,
+      }))
+      .sort((a, b) => b.total - a.total);
+    return {
+      stats,
+      totalCount,
+      totalAmount,
+      scope: { region: ctx.region, role: ctx.role },
+    };
   });
 
 // ---------- Admin: signed URL ----------
@@ -187,7 +230,7 @@ export const getSignedUrl = createServerFn({ method: "POST" })
     return { url: signed.signedUrl };
   });
 
-// ---------- Admin: bulk ZIP ----------
+// ---------- Admin: bulk ZIP (date/region structure + Excel summary) ----------
 const zipSchema = z.object({
   accessToken: z.string().min(1),
   region: z.enum(["MTR", "FTR"]).optional(),
@@ -197,93 +240,245 @@ const zipSchema = z.object({
   toDate: z.string().datetime().optional(),
 });
 
+function safeName(s: string): string {
+  return s.replace(/[\\/:*?"<>|]+/g, "_");
+}
+
+function dateFolder(iso: string): string {
+  const d = new Date(iso);
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  const month = d.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
+  return `${day} ${month}`;
+}
+
+function extFromMime(mime: string): string {
+  if (mime === "image/png") return "png";
+  if (mime === "image/jpeg") return "jpg";
+  if (mime === "application/pdf") return "pdf";
+  return "bin";
+}
+
 export const getBulkZip = createServerFn({ method: "POST" })
   .inputValidator((input) => zipSchema.parse(input))
   .handler(async ({ data }) => {
-    await requireAdmin(data.accessToken);
+    const ctx = await requireAdmin(data.accessToken);
+    const effRegion = scopeRegion(ctx, data.region);
 
+    // Fetch proofs
     let q = supabaseAdmin
       .from("payment_proofs")
-      .select("storage_path, region, exchange_id, executive_sales, mdn, mime_type");
-    if (data.region) q = q.eq("region", data.region);
+      .select(
+        "storage_path, region, exchange_id, executive_sales, mdn, mime_type, amount_paid, uploaded_at",
+      );
+    if (effRegion) q = q.eq("region", effRegion);
     if (data.exchangeId) q = q.eq("exchange_id", data.exchangeId);
     if (data.executiveSales) q = q.eq("executive_sales", data.executiveSales);
     if (data.fromDate) q = q.gte("uploaded_at", data.fromDate);
     if (data.toDate) q = q.lte("uploaded_at", data.toDate);
-    const { data: rows, error } = await q.limit(2000);
+    const { data: rows, error } = await q.limit(5000);
     if (error) throw new Error(error.message);
-    if (!rows || rows.length === 0) throw new Error("No files match this scope.");
+    if (!rows || rows.length === 0) throw new Error("No proofs match this scope.");
 
+    // Fetch all customers (for full reference list)
+    let cq = supabaseAdmin
+      .from("customers")
+      .select("mdn, name, region, exchange_id, executive_sales, due_amount, discount");
+    if (effRegion) cq = cq.eq("region", effRegion);
+    const { data: customers, error: cErr } = await cq.limit(20000);
+    if (cErr) throw new Error(cErr.message);
+
+    const proofByMdn = new Map(rows.map((r) => [r.mdn, r]));
+
+    // Build files
     const files: Record<string, Uint8Array> = {};
     for (const row of rows) {
       const { data: blob, error: dErr } = await supabaseAdmin.storage
         .from("payment-proofs")
         .download(row.storage_path);
       if (dErr || !blob) continue;
-      files[row.storage_path] = new Uint8Array(await blob.arrayBuffer());
+      const folder = `${dateFolder(row.uploaded_at)}/${safeName(row.region)}`;
+      const fname = `${safeName(row.mdn)}.${extFromMime(row.mime_type)}`;
+      files[`${folder}/${fname}`] = new Uint8Array(await blob.arrayBuffer());
     }
     if (Object.keys(files).length === 0) throw new Error("Failed to fetch files.");
 
-    files["_manifest.txt"] = strToU8(
-      rows
-        .map(
-          (r) =>
-            `${r.storage_path}\tMDN=${r.mdn}\tregion=${r.region}\texchange=${r.exchange_id}\texecutive=${r.executive_sales ?? ""}`,
-        )
-        .join("\n"),
-    );
+    // Build Excel summary with ALL customers + proof status
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("Customers");
+    ws.columns = [
+      { header: "MDN", key: "mdn", width: 16 },
+      { header: "Name", key: "name", width: 28 },
+      { header: "Region", key: "region", width: 8 },
+      { header: "Exchange ID", key: "exchange_id", width: 14 },
+      { header: "Executive Sales", key: "executive_sales", width: 22 },
+      { header: "Due Amount", key: "due_amount", width: 14 },
+      { header: "Discount", key: "discount", width: 12 },
+      { header: "Proof Status", key: "status", width: 14 },
+      { header: "Amount Paid", key: "amount_paid", width: 14 },
+      { header: "Uploaded At", key: "uploaded_at", width: 22 },
+      { header: "Storage Path", key: "storage_path", width: 50 },
+    ];
+    ws.getRow(1).font = { bold: true };
+    ws.getRow(1).fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFE5E7EB" },
+    };
+
+    for (const c of customers ?? []) {
+      const p = proofByMdn.get(c.mdn);
+      ws.addRow({
+        mdn: c.mdn,
+        name: c.name,
+        region: c.region,
+        exchange_id: c.exchange_id,
+        executive_sales: c.executive_sales ?? "",
+        due_amount: Number(c.due_amount ?? 0),
+        discount: Number(c.discount ?? 0),
+        status: p ? "Submitted" : "Pending",
+        amount_paid: p ? Number(p.amount_paid ?? 0) : "",
+        uploaded_at: p ? new Date(p.uploaded_at).toISOString() : "",
+        storage_path: p ? p.storage_path : "",
+      });
+    }
+    // Also include any proofs whose customer rows are missing
+    for (const r of rows) {
+      if (!(customers ?? []).some((c) => c.mdn === r.mdn)) {
+        ws.addRow({
+          mdn: r.mdn,
+          name: "(unknown)",
+          region: r.region,
+          exchange_id: r.exchange_id,
+          executive_sales: r.executive_sales ?? "",
+          due_amount: "",
+          discount: "",
+          status: "Submitted",
+          amount_paid: Number(r.amount_paid ?? 0),
+          uploaded_at: new Date(r.uploaded_at).toISOString(),
+          storage_path: r.storage_path,
+        });
+      }
+    }
+    ws.autoFilter = { from: "A1", to: "K1" };
+
+    const xlsxBuf = await wb.xlsx.writeBuffer();
+    files["_summary.xlsx"] = new Uint8Array(xlsxBuf as ArrayBuffer);
 
     const zipped = zipSync(files, { level: 6 });
     const base64 = Buffer.from(zipped).toString("base64");
     return { base64, count: rows.length };
   });
 
-// ---------- Admin: import customers from CSV ----------
+// ---------- Admin: import customers from CSV (with validation) ----------
 const importSchema = z.object({
   accessToken: z.string().min(1),
   rows: z
     .array(
       z.object({
-        mdn: z.string().regex(/^\d{10,15}$/),
-        name: z.string().min(1).max(200),
-        region: z.enum(["MTR", "FTR"]),
-        exchange_id: z.string().min(1).max(64),
-        executive_sales: z.string().max(128).optional().nullable(),
-        due_amount: z.number().nonnegative().optional(),
-        discount: z.number().nonnegative().optional(),
+        rowIndex: z.number().int(),
+        mdn: z.string(),
+        name: z.string(),
+        region: z.string(),
+        exchange_id: z.string(),
+        executive_sales: z.string().optional().nullable(),
+        due_amount: z.number().optional(),
+        discount: z.number().optional(),
       }),
     )
     .min(1)
-    .max(5000),
+    .max(20000),
 });
 
 export const importCustomers = createServerFn({ method: "POST" })
   .inputValidator((input) => importSchema.parse(input))
   .handler(async ({ data }) => {
-    await requireAdmin(data.accessToken);
-    const payload = data.rows.map((r) => ({
-      mdn: r.mdn,
-      name: r.name,
-      region: r.region,
-      exchange_id: r.exchange_id,
-      executive_sales: r.executive_sales || null,
-      due_amount: r.due_amount ?? 0,
-      discount: r.discount ?? 0,
-    }));
-    const { error } = await supabaseAdmin
-      .from("customers")
-      .upsert(payload, { onConflict: "mdn" });
-    if (error) throw new Error(error.message);
+    const ctx = await requireAdmin(data.accessToken);
+    const valid: {
+      mdn: string;
+      name: string;
+      region: "MTR" | "FTR";
+      exchange_id: string;
+      executive_sales: string | null;
+      due_amount: number;
+      discount: number;
+    }[] = [];
+    const errors: { row: number; message: string }[] = [];
+    const seen = new Set<string>();
 
-    // Also propagate executive_sales updates onto existing payment_proofs rows
-    for (const r of payload) {
-      if (r.executive_sales !== null) {
+    for (const r of data.rows) {
+      const mdn = (r.mdn || "").trim();
+      const name = (r.name || "").trim();
+      const region = (r.region || "").trim().toUpperCase();
+      const exch = (r.exchange_id || "").trim();
+      const exec = (r.executive_sales ?? "").toString().trim();
+
+      if (!/^\d{10,15}$/.test(mdn)) {
+        errors.push({ row: r.rowIndex, message: `Invalid MDN "${mdn}"` });
+        continue;
+      }
+      if (!name) {
+        errors.push({ row: r.rowIndex, message: "Missing name" });
+        continue;
+      }
+      if (region !== "MTR" && region !== "FTR") {
+        errors.push({ row: r.rowIndex, message: `Region must be MTR or FTR (got "${r.region}")` });
+        continue;
+      }
+      if (ctx.region && region !== ctx.region) {
+        errors.push({
+          row: r.rowIndex,
+          message: `Region ${region} outside your scope (${ctx.region})`,
+        });
+        continue;
+      }
+      if (!exch) {
+        errors.push({ row: r.rowIndex, message: "Missing exchange_id" });
+        continue;
+      }
+      if (seen.has(mdn)) {
+        errors.push({ row: r.rowIndex, message: `Duplicate MDN ${mdn} in file` });
+        continue;
+      }
+      seen.add(mdn);
+      valid.push({
+        mdn,
+        name,
+        region: region as "MTR" | "FTR",
+        exchange_id: exch,
+        executive_sales: exec || null,
+        due_amount: Number.isFinite(r.due_amount) ? Number(r.due_amount) : 0,
+        discount: Number.isFinite(r.discount) ? Number(r.discount) : 0,
+      });
+    }
+
+    if (valid.length === 0) {
+      return { ok: false, inserted: 0, updated: 0, total: 0, errors };
+    }
+
+    // Determine which existed (for inserted vs updated count)
+    const mdns = valid.map((v) => v.mdn);
+    const { data: existing } = await supabaseAdmin
+      .from("customers")
+      .select("mdn")
+      .in("mdn", mdns);
+    const existingSet = new Set((existing ?? []).map((e) => e.mdn));
+
+    const { error: upErr } = await supabaseAdmin
+      .from("customers")
+      .upsert(valid, { onConflict: "mdn" });
+    if (upErr) throw new Error(upErr.message);
+
+    // Propagate executive_sales to payment_proofs
+    for (const v of valid) {
+      if (v.executive_sales !== null) {
         await supabaseAdmin
           .from("payment_proofs")
-          .update({ executive_sales: r.executive_sales })
-          .eq("mdn", r.mdn);
+          .update({ executive_sales: v.executive_sales })
+          .eq("mdn", v.mdn);
       }
     }
 
-    return { ok: true, count: payload.length };
+    const updated = valid.filter((v) => existingSet.has(v.mdn)).length;
+    const inserted = valid.length - updated;
+    return { ok: true, inserted, updated, total: valid.length, errors };
   });

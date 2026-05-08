@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -9,6 +9,13 @@ import {
   getExecutiveStats,
   importCustomers,
 } from "@/server/proofs.functions";
+import {
+  whoAmI,
+  listUsers,
+  createUser,
+  deleteUser,
+  updateUserRegion,
+} from "@/server/users.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,6 +49,9 @@ import {
   Users,
   FileSpreadsheet,
   TrendingUp,
+  ArrowUpDown,
+  Trash2,
+  UserPlus,
 } from "lucide-react";
 
 export const Route = createFileRoute("/admin")({
@@ -67,6 +77,8 @@ type Proof = {
   amount_paid: number | null;
   uploaded_at: string;
 };
+
+type Me = { role: "super_admin" | "admin" | null; region: "MTR" | "FTR" | null; email?: string | null };
 
 function AdminPage() {
   const [session, setSession] = useState<unknown>(null);
@@ -174,7 +186,9 @@ function Dashboard() {
   const zip = useServerFn(getBulkZip);
   const stats = useServerFn(getExecutiveStats);
   const importFn = useServerFn(importCustomers);
+  const whoAmIFn = useServerFn(whoAmI);
 
+  const [me, setMe] = useState<Me>({ role: null, region: null });
   const [proofs, setProofs] = useState<Proof[]>([]);
   const [loading, setLoading] = useState(true);
   const [region, setRegion] = useState<string>("all");
@@ -186,11 +200,16 @@ function Dashboard() {
   const [zipping, setZipping] = useState(false);
   const [forbidden, setForbidden] = useState(false);
 
-  const [statRows, setStatRows] = useState<{ executive_sales: string; count: number; total: number }[]>([]);
+  const [statRows, setStatRows] = useState<
+    { executive_sales: string; region: string; count: number; total: number }[]
+  >([]);
   const [totals, setTotals] = useState({ count: 0, amount: 0 });
   const [statFrom, setStatFrom] = useState("");
   const [statTo, setStatTo] = useState("");
+  const [statRegion, setStatRegion] = useState<string>("all");
   const [statLoading, setStatLoading] = useState(false);
+  const [sortKey, setSortKey] = useState<"executive_sales" | "region" | "count" | "total">("total");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const [importing, setImporting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -200,6 +219,21 @@ function Dashboard() {
     const t = data.session?.access_token;
     if (!t) throw new Error("Not signed in");
     return t;
+  }
+
+  async function loadMe() {
+    try {
+      const accessToken = await getToken();
+      const r = await whoAmIFn({ data: { accessToken } });
+      setMe(r as Me);
+      if (r.region) {
+        setRegion(r.region);
+        setStatRegion(r.region);
+      }
+      if (!r.role) setForbidden(true);
+    } catch {
+      setForbidden(true);
+    }
   }
 
   async function load() {
@@ -238,6 +272,7 @@ function Dashboard() {
       const res = await stats({
         data: {
           accessToken,
+          region: statRegion === "all" ? undefined : (statRegion as "MTR" | "FTR"),
           fromDate: statFrom ? new Date(statFrom + "T00:00:00").toISOString() : undefined,
           toDate: statTo ? new Date(statTo + "T23:59:59.999").toISOString() : undefined,
         },
@@ -252,10 +287,35 @@ function Dashboard() {
   }
 
   useEffect(() => {
-    load();
-    loadStats();
+    (async () => {
+      await loadMe();
+      await load();
+      await loadStats();
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const sortedStats = useMemo(() => {
+    const copy = [...statRows];
+    copy.sort((a, b) => {
+      let av: string | number = a[sortKey];
+      let bv: string | number = b[sortKey];
+      if (typeof av === "string") av = av.toLowerCase();
+      if (typeof bv === "string") bv = (bv as string).toLowerCase();
+      if (av < bv) return sortDir === "asc" ? -1 : 1;
+      if (av > bv) return sortDir === "asc" ? 1 : -1;
+      return 0;
+    });
+    return copy;
+  }, [statRows, sortKey, sortDir]);
+
+  function toggleSort(k: typeof sortKey) {
+    if (sortKey === k) setSortDir(sortDir === "asc" ? "desc" : "asc");
+    else {
+      setSortKey(k);
+      setSortDir(k === "executive_sales" || k === "region" ? "asc" : "desc");
+    }
+  }
 
   async function handleDownload(p: Proof) {
     try {
@@ -288,10 +348,10 @@ function Dashboard() {
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       const tag = executiveSales || (region === "all" ? "all" : region);
-      a.download = `payment-proofs-${tag}.zip`;
+      a.download = `payment-proofs-${tag}-${new Date().toISOString().slice(0, 10)}.zip`;
       a.click();
       URL.revokeObjectURL(a.href);
-      toast.success(`Downloaded ${res.count} files.`);
+      toast.success(`Downloaded ${res.count} files (Excel summary included).`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "ZIP failed");
     } finally {
@@ -305,11 +365,27 @@ function Dashboard() {
     setImporting(true);
     try {
       const text = await f.text();
-      const rows = parseCsv(text);
-      if (rows.length === 0) throw new Error("CSV has no data rows.");
+      const { rows, errors: parseErrors } = parseCsv(text);
+      if (rows.length === 0) {
+        const detail = parseErrors.length ? `: ${parseErrors[0].message}` : "";
+        throw new Error(`No valid rows found${detail}`);
+      }
       const accessToken = await getToken();
       const res = await importFn({ data: { accessToken, rows } });
-      toast.success(`Imported ${res.count} customers.`);
+      const errCount = (res.errors?.length ?? 0) + parseErrors.length;
+      if (res.ok) {
+        toast.success(
+          `Imported ${res.total} customers (${res.inserted} new, ${res.updated} updated)${errCount ? ` · ${errCount} skipped` : ""}.`,
+        );
+      } else {
+        toast.error(`Import failed — ${errCount} errors. First: ${(res.errors?.[0]?.message ?? parseErrors[0]?.message) || "unknown"}`);
+      }
+      if (errCount > 0) {
+        const all = [...parseErrors, ...(res.errors ?? [])].slice(0, 5);
+        toast.message("Validation errors", {
+          description: all.map((e) => `Row ${e.row}: ${e.message}`).join("\n"),
+        });
+      }
       await loadStats();
       await load();
     } catch (err) {
@@ -334,6 +410,8 @@ function Dashboard() {
     );
   }
 
+  const lockedRegion = me.region; // null => super admin / all regions
+
   return (
     <div>
       <header className="border-b bg-card/50 backdrop-blur">
@@ -345,7 +423,14 @@ function Dashboard() {
             >
               <ShieldCheck className="h-5 w-5" />
             </div>
-            <span className="text-lg font-semibold">Admin Dashboard</span>
+            <div>
+              <div className="text-lg font-semibold leading-tight">Admin Dashboard</div>
+              <div className="text-xs text-muted-foreground">
+                {me.role === "super_admin"
+                  ? "Super Admin · all regions"
+                  : `Admin · ${lockedRegion ?? "all"} region`}
+              </div>
+            </div>
           </div>
           <Button variant="ghost" size="sm" onClick={() => supabase.auth.signOut()}>
             <LogOut className="mr-2 h-4 w-4" /> Sign out
@@ -365,36 +450,44 @@ function Dashboard() {
             <TabsTrigger value="customers">
               <Users className="mr-2 h-4 w-4" /> Customers
             </TabsTrigger>
+            {me.role === "super_admin" && (
+              <TabsTrigger value="users">
+                <UserPlus className="mr-2 h-4 w-4" /> Users
+              </TabsTrigger>
+            )}
           </TabsList>
 
-          {/* Overview / Stats */}
+          {/* Overview */}
           <TabsContent value="overview" className="space-y-6">
             <Card className="shadow-[var(--shadow-card)]">
               <CardHeader>
                 <CardTitle>Executive Sales Performance</CardTitle>
-                <CardDescription>
-                  Payment proofs received per Executive Sales person.
-                </CardDescription>
+                <CardDescription>Payment proofs received per Executive Sales person.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex flex-wrap items-end gap-3">
                   <div className="space-y-2">
+                    <Label>Region</Label>
+                    <Select
+                      value={statRegion}
+                      onValueChange={setStatRegion}
+                      disabled={!!lockedRegion}
+                    >
+                      <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {!lockedRegion && <SelectItem value="all">All</SelectItem>}
+                        <SelectItem value="MTR">MTR</SelectItem>
+                        <SelectItem value="FTR">FTR</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
                     <Label>From</Label>
-                    <Input
-                      type="date"
-                      value={statFrom}
-                      onChange={(e) => setStatFrom(e.target.value)}
-                      className="w-44"
-                    />
+                    <Input type="date" value={statFrom} onChange={(e) => setStatFrom(e.target.value)} className="w-44" />
                   </div>
                   <div className="space-y-2">
                     <Label>To</Label>
-                    <Input
-                      type="date"
-                      value={statTo}
-                      onChange={(e) => setStatTo(e.target.value)}
-                      className="w-44"
-                    />
+                    <Input type="date" value={statTo} onChange={(e) => setStatTo(e.target.value)} className="w-44" />
                   </div>
                   <Button onClick={loadStats} disabled={statLoading}>
                     {statLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -405,6 +498,7 @@ function Dashboard() {
                     onClick={() => {
                       setStatFrom("");
                       setStatTo("");
+                      if (!lockedRegion) setStatRegion("all");
                       setTimeout(loadStats, 0);
                     }}
                   >
@@ -412,50 +506,45 @@ function Dashboard() {
                   </Button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
                   <StatBox label="Total Proofs" value={totals.count.toString()} />
                   <StatBox label="Total Amount (PKR)" value={fmtPKR(totals.amount)} />
-                  <StatBox label="Executives" value={statRows.length.toString()} />
+                  <StatBox label="Executives" value={new Set(statRows.map((s) => s.executive_sales)).size.toString()} />
+                  <StatBox
+                    label="Avg / Proof"
+                    value={fmtPKR(totals.count ? Math.round(totals.amount / totals.count) : 0)}
+                  />
                 </div>
 
                 <div className="overflow-hidden rounded-lg border">
                   <Table>
-                    <TableHeader>
+                    <TableHeader className="bg-muted/50 sticky top-0">
                       <TableRow>
-                        <TableHead>Executive Sales</TableHead>
-                        <TableHead className="text-right">Proofs</TableHead>
-                        <TableHead className="text-right">Total Amount (PKR)</TableHead>
-                        <TableHead className="text-right">Action</TableHead>
+                        <SortHead label="Executive Sales" k="executive_sales" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+                        <SortHead label="Region" k="region" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+                        <SortHead label="Proofs" k="count" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} className="text-right" />
+                        <SortHead label="Total (PKR)" k="total" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} className="text-right" />
+                        <TableHead className="text-right">Avg</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {statRows.length === 0 ? (
+                      {sortedStats.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={4} className="py-10 text-center text-muted-foreground">
+                          <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
                             No data for selected range.
                           </TableCell>
                         </TableRow>
                       ) : (
-                        statRows.map((r) => (
-                          <TableRow key={r.executive_sales}>
+                        sortedStats.map((r, i) => (
+                          <TableRow key={`${r.executive_sales}-${r.region}`} className={i % 2 ? "bg-muted/20" : ""}>
                             <TableCell className="font-medium">{r.executive_sales}</TableCell>
-                            <TableCell className="text-right">
-                              <Badge variant="secondary">{r.count}</Badge>
+                            <TableCell>
+                              <Badge variant="secondary">{r.region}</Badge>
                             </TableCell>
+                            <TableCell className="text-right">{r.count}</TableCell>
                             <TableCell className="text-right font-mono">{fmtPKR(r.total)}</TableCell>
-                            <TableCell className="text-right">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  setExecutiveSales(
-                                    r.executive_sales === "(Unassigned)" ? "" : r.executive_sales,
-                                  );
-                                  toast.info("Filter applied. Switch to Submissions tab.");
-                                }}
-                              >
-                                Filter
-                              </Button>
+                            <TableCell className="text-right font-mono text-muted-foreground">
+                              {fmtPKR(Math.round(r.total / Math.max(r.count, 1)))}
                             </TableCell>
                           </TableRow>
                         ))
@@ -473,10 +562,10 @@ function Dashboard() {
               <CardContent className="flex flex-wrap items-end gap-3 pt-6">
                 <div className="space-y-2">
                   <Label>Region</Label>
-                  <Select value={region} onValueChange={setRegion}>
+                  <Select value={region} onValueChange={setRegion} disabled={!!lockedRegion}>
                     <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All</SelectItem>
+                      {!lockedRegion && <SelectItem value="all">All</SelectItem>}
                       <SelectItem value="MTR">MTR</SelectItem>
                       <SelectItem value="FTR">FTR</SelectItem>
                     </SelectContent>
@@ -524,7 +613,7 @@ function Dashboard() {
                 <Button
                   variant="ghost"
                   onClick={() => {
-                    setRegion("all");
+                    if (!lockedRegion) setRegion("all");
                     setExchangeId("");
                     setExecutiveSales("");
                     setSearch("");
@@ -541,7 +630,7 @@ function Dashboard() {
                     ) : (
                       <Package className="mr-2 h-4 w-4" />
                     )}
-                    Download ZIP
+                    Download ZIP + Excel
                   </Button>
                 </div>
               </CardContent>
@@ -614,9 +703,14 @@ function Dashboard() {
                   </code>
                   <ul className="mt-3 list-disc pl-5 text-xs text-muted-foreground space-y-1">
                     <li><b>region</b> must be <code>MTR</code> or <code>FTR</code></li>
-                    <li><b>mdn</b> 10–15 digits — used as unique key</li>
+                    <li><b>mdn</b> 10–15 digits — unique key, duplicates in file are skipped</li>
                     <li><b>due_amount</b> &amp; <b>discount</b> are numbers (default 0)</li>
                     <li><b>executive_sales</b> is the sales person's name (optional)</li>
+                    {lockedRegion && (
+                      <li className="text-amber-600">
+                        Your scope is region <b>{lockedRegion}</b>; rows for other regions will be skipped.
+                      </li>
+                    )}
                   </ul>
                 </div>
 
@@ -652,9 +746,45 @@ function Dashboard() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* Users (super-admin only) */}
+          {me.role === "super_admin" && (
+            <TabsContent value="users" className="space-y-6">
+              <UsersPanel />
+            </TabsContent>
+          )}
         </Tabs>
       </main>
     </div>
+  );
+}
+
+function SortHead({
+  label,
+  k,
+  sortKey,
+  sortDir,
+  onClick,
+  className,
+}: {
+  label: string;
+  k: "executive_sales" | "region" | "count" | "total";
+  sortKey: string;
+  sortDir: "asc" | "desc";
+  onClick: (k: "executive_sales" | "region" | "count" | "total") => void;
+  className?: string;
+}) {
+  return (
+    <TableHead className={className}>
+      <button
+        onClick={() => onClick(k)}
+        className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
+      >
+        {label}
+        <ArrowUpDown className={`h-3 w-3 ${sortKey === k ? "text-primary" : "opacity-40"}`} />
+        {sortKey === k && <span className="text-[10px]">{sortDir === "asc" ? "↑" : "↓"}</span>}
+      </button>
+    </TableHead>
   );
 }
 
@@ -667,18 +797,209 @@ function StatBox({ label, value }: { label: string; value: string }) {
   );
 }
 
-// Tiny CSV parser (handles quoted fields and commas)
-function parseCsv(text: string): Array<{
-  mdn: string;
-  name: string;
-  region: "MTR" | "FTR";
-  exchange_id: string;
-  executive_sales?: string | null;
-  due_amount?: number;
-  discount?: number;
-}> {
+function UsersPanel() {
+  const listFn = useServerFn(listUsers);
+  const createFn = useServerFn(createUser);
+  const deleteFn = useServerFn(deleteUser);
+  const updateFn = useServerFn(updateUserRegion);
+
+  type Row = {
+    roleId: string;
+    userId: string;
+    email: string;
+    role: string;
+    region: string | null;
+  };
+  const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [email, setEmail] = useState("");
+  const [pwd, setPwd] = useState("");
+  const [region, setRegion] = useState<"MTR" | "FTR" | "ALL">("MTR");
+  const [busy, setBusy] = useState(false);
+
+  async function token() {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token ?? "";
+  }
+
+  async function load() {
+    setLoading(true);
+    try {
+      const accessToken = await token();
+      const r = await listFn({ data: { accessToken } });
+      setRows(r.users);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to load users");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function onCreate(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const accessToken = await token();
+      await createFn({ data: { accessToken, email, password: pwd, region } });
+      toast.success("User created.");
+      setEmail("");
+      setPwd("");
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Create failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onDelete(userId: string) {
+    if (!confirm("Delete this user?")) return;
+    try {
+      const accessToken = await token();
+      await deleteFn({ data: { accessToken, userId } });
+      toast.success("User deleted.");
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Delete failed");
+    }
+  }
+
+  async function onChangeRegion(userId: string, value: "MTR" | "FTR" | "ALL") {
+    try {
+      const accessToken = await token();
+      await updateFn({ data: { accessToken, userId, region: value } });
+      toast.success("Region updated.");
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Update failed");
+    }
+  }
+
+  return (
+    <>
+      <Card className="shadow-[var(--shadow-card)]">
+        <CardHeader>
+          <CardTitle>Create regional admin</CardTitle>
+          <CardDescription>
+            Regional admins can only see and download data for their assigned region.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={onCreate} className="grid gap-3 sm:grid-cols-[1fr_1fr_auto_auto] sm:items-end">
+            <div className="space-y-2">
+              <Label>Email</Label>
+              <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            </div>
+            <div className="space-y-2">
+              <Label>Password</Label>
+              <Input type="password" minLength={6} value={pwd} onChange={(e) => setPwd(e.target.value)} required />
+            </div>
+            <div className="space-y-2">
+              <Label>Region</Label>
+              <Select value={region} onValueChange={(v) => setRegion(v as "MTR" | "FTR" | "ALL")}>
+                <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="MTR">MTR</SelectItem>
+                  <SelectItem value="FTR">FTR</SelectItem>
+                  <SelectItem value="ALL">All regions</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button type="submit" disabled={busy}>
+              {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              <UserPlus className="mr-2 h-4 w-4" /> Create
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card className="shadow-[var(--shadow-card)]">
+        <CardHeader>
+          <CardTitle>Existing users</CardTitle>
+          <CardDescription>{rows.length} user(s)</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex items-center gap-2 text-muted-foreground py-6">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Region</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((u) => (
+                  <TableRow key={u.roleId}>
+                    <TableCell>{u.email}</TableCell>
+                    <TableCell>
+                      <Badge variant={u.role === "super_admin" ? "default" : "secondary"}>{u.role}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      {u.role === "admin" ? (
+                        <Select
+                          value={u.region ?? "ALL"}
+                          onValueChange={(v) => onChangeRegion(u.userId, v as "MTR" | "FTR" | "ALL")}
+                        >
+                          <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="MTR">MTR</SelectItem>
+                            <SelectItem value="FTR">FTR</SelectItem>
+                            <SelectItem value="ALL">All</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="text-muted-foreground">all</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {u.role !== "super_admin" && (
+                        <Button size="sm" variant="outline" onClick={() => onDelete(u.userId)}>
+                          <Trash2 className="mr-2 h-3.5 w-3.5" /> Delete
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </>
+  );
+}
+
+// Tiny CSV parser with row-level error collection
+function parseCsv(text: string): {
+  rows: Array<{
+    rowIndex: number;
+    mdn: string;
+    name: string;
+    region: string;
+    exchange_id: string;
+    executive_sales?: string | null;
+    due_amount?: number;
+    discount?: number;
+  }>;
+  errors: { row: number; message: string }[];
+} {
+  const errors: { row: number; message: string }[] = [];
   const lines = text.replace(/\r/g, "").split("\n").filter((l) => l.trim().length > 0);
-  if (lines.length < 2) return [];
+  if (lines.length < 2) {
+    errors.push({ row: 0, message: "File is empty or only has a header." });
+    return { rows: [], errors };
+  }
   const splitLine = (line: string): string[] => {
     const out: string[] = [];
     let cur = "";
@@ -698,7 +1019,13 @@ function parseCsv(text: string): Array<{
     out.push(cur);
     return out.map((s) => s.trim());
   };
-  const header = splitLine(lines[0]).map((h) => h.toLowerCase());
+  const header = splitLine(lines[0]).map((h) => h.toLowerCase().replace(/^\ufeff/, ""));
+  const required = ["mdn", "name", "region", "exchange_id"];
+  const missing = required.filter((c) => !header.includes(c));
+  if (missing.length) {
+    errors.push({ row: 1, message: `Missing required column(s): ${missing.join(", ")}` });
+    return { rows: [], errors };
+  }
   const idx = (k: string) => header.indexOf(k);
   const iMdn = idx("mdn"),
     iName = idx("name"),
@@ -707,25 +1034,31 @@ function parseCsv(text: string): Array<{
     iExec = idx("executive_sales"),
     iDue = idx("due_amount"),
     iDisc = idx("discount");
-  if (iMdn < 0 || iName < 0 || iRegion < 0 || iExch < 0) {
-    throw new Error("CSV missing required columns: mdn, name, region, exchange_id");
-  }
   const rows = [];
   for (let i = 1; i < lines.length; i++) {
     const cols = splitLine(lines[i]);
-    const region = cols[iRegion]?.toUpperCase();
-    if (region !== "MTR" && region !== "FTR") {
-      throw new Error(`Row ${i + 1}: region must be MTR or FTR (got "${cols[iRegion]}")`);
+    const dueRaw = iDue >= 0 ? cols[iDue] : "";
+    const discRaw = iDisc >= 0 ? cols[iDisc] : "";
+    const due = dueRaw ? Number(dueRaw.replace(/,/g, "")) : 0;
+    const disc = discRaw ? Number(discRaw.replace(/,/g, "")) : 0;
+    if (dueRaw && Number.isNaN(due)) {
+      errors.push({ row: i + 1, message: `Invalid due_amount "${dueRaw}"` });
+      continue;
+    }
+    if (discRaw && Number.isNaN(disc)) {
+      errors.push({ row: i + 1, message: `Invalid discount "${discRaw}"` });
+      continue;
     }
     rows.push({
-      mdn: cols[iMdn],
-      name: cols[iName],
-      region: region as "MTR" | "FTR",
-      exchange_id: cols[iExch],
+      rowIndex: i + 1,
+      mdn: cols[iMdn] ?? "",
+      name: cols[iName] ?? "",
+      region: cols[iRegion] ?? "",
+      exchange_id: cols[iExch] ?? "",
       executive_sales: iExec >= 0 ? cols[iExec] || null : null,
-      due_amount: iDue >= 0 && cols[iDue] ? Number(cols[iDue]) : 0,
-      discount: iDisc >= 0 && cols[iDisc] ? Number(cols[iDisc]) : 0,
+      due_amount: due,
+      discount: disc,
     });
   }
-  return rows;
+  return { rows, errors };
 }
