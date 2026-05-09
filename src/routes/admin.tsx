@@ -52,7 +52,9 @@ import {
   ArrowUpDown,
   Trash2,
   UserPlus,
+  Camera,
 } from "lucide-react";
+import html2canvas from "html2canvas";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
