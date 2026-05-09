@@ -8,7 +8,7 @@ import {
   getBulkZip,
   getExecutiveStats,
   importCustomers,
-} from "@/server/proofs.functions";
+} from "@/lib/proofs.functions";
 import {
   whoAmI,
   listUsers,
