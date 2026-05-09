@@ -139,6 +139,7 @@ function TrackerPage() {
     setAmountPaid("");
     setFile(null);
     setDone(false);
+    setExistingProof(null);
   }
 
   return (
