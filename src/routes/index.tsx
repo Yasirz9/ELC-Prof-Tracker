@@ -285,6 +285,29 @@ function TrackerPage() {
                       Submit another
                     </Button>
                   </div>
+                ) : existingProof ? (
+                  <div className="flex flex-col items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 py-8 text-center">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/15">
+                      <CheckCircle2 className="h-8 w-8 text-primary" />
+                    </div>
+                    <div className="text-lg font-semibold">
+                      Proof already uploaded on{" "}
+                      {new Date(existingProof.uploaded_at).toLocaleDateString("en-GB", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </div>
+                    <p className="max-w-sm text-sm text-muted-foreground">
+                      A payment proof for MDN{" "}
+                      <span className="font-mono font-medium text-foreground">{customer.mdn}</span>{" "}
+                      has already been submitted. Re-upload is not allowed.
+                    </p>
+                    <Button variant="outline" onClick={resetAll} className="mt-1">
+                      <ArrowLeft className="mr-2 h-4 w-4" />
+                      Check another MDN
+                    </Button>
+                  </div>
                 ) : (
                   <form onSubmit={handleSubmit} className="space-y-4">
                     <div className="space-y-2">
