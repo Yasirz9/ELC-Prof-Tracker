@@ -77,6 +77,7 @@ function TrackerPage() {
     if (err) return toast.error(err);
     setLookingUp(true);
     setDone(false);
+    setExistingProof(null);
     try {
       const res = await lookup({ data: { mdn } });
       if (!res.customer) {
@@ -93,6 +94,7 @@ function TrackerPage() {
           due_amount: Number(c.due_amount ?? 0),
           discount: Number(c.discount ?? 0),
         });
+        setExistingProof((res as any).existingProof ?? null);
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Lookup failed.");
