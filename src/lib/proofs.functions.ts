@@ -32,8 +32,18 @@ export const getCustomerByMdn = createServerFn({ method: "POST" })
       .eq("mdn", data.mdn)
       .maybeSingle();
     if (error) throw new Error(error.message);
-    if (!customer) return { customer: null as null };
-    return { customer };
+    if (!customer) return { customer: null as null, existingProof: null };
+    const { data: existing } = await supabaseAdmin
+      .from("payment_proofs")
+      .select("uploaded_at, amount_paid")
+      .eq("mdn", data.mdn)
+      .maybeSingle();
+    return {
+      customer,
+      existingProof: existing
+        ? { uploaded_at: existing.uploaded_at, amount_paid: Number(existing.amount_paid ?? 0) }
+        : null,
+    };
   });
 
 // ---------- Public: upload proof ----------
