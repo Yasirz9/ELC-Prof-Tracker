@@ -201,15 +201,16 @@ function Dashboard() {
   const [forbidden, setForbidden] = useState(false);
 
   const [statRows, setStatRows] = useState<
-    { executive_sales: string; region: string; count: number; total: number }[]
+    { executive_sales: string; region: string; count: number; total: number; elc_count: number }[]
   >([]);
   const [totals, setTotals] = useState({ count: 0, amount: 0 });
   const [statFrom, setStatFrom] = useState("");
   const [statTo, setStatTo] = useState("");
   const [statRegion, setStatRegion] = useState<string>("all");
   const [statLoading, setStatLoading] = useState(false);
-  const [sortKey, setSortKey] = useState<"executive_sales" | "region" | "count" | "total">("total");
+  const [sortKey, setSortKey] = useState<"executive_sales" | "region" | "count" | "elc_count">("count");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const perfRef = useRef<HTMLDivElement>(null);
 
   const [importing, setImporting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
