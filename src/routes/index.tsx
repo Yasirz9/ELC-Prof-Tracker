@@ -59,6 +59,7 @@ function TrackerPage() {
 
   const [mdn, setMdn] = useState("");
   const [customer, setCustomer] = useState<Customer | null>(null);
+  const [existingProof, setExistingProof] = useState<{ uploaded_at: string; amount_paid: number } | null>(null);
   const [lookingUp, setLookingUp] = useState(false);
   const [amountPaid, setAmountPaid] = useState<string>("");
   const [file, setFile] = useState<File | null>(null);
