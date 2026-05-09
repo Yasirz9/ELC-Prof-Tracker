@@ -32,18 +32,8 @@ export const getCustomerByMdn = createServerFn({ method: "POST" })
       .eq("mdn", data.mdn)
       .maybeSingle();
     if (error) throw new Error(error.message);
-    if (!customer) return { customer: null as null, existingProof: null };
-    const { data: existing } = await supabaseAdmin
-      .from("payment_proofs")
-      .select("uploaded_at, amount_paid")
-      .eq("mdn", data.mdn)
-      .maybeSingle();
-    return {
-      customer,
-      existingProof: existing
-        ? { uploaded_at: existing.uploaded_at, amount_paid: Number(existing.amount_paid ?? 0) }
-        : null,
-    };
+    if (!customer) return { customer: null as null };
+    return { customer };
   });
 
 // ---------- Public: upload proof ----------
@@ -159,20 +149,6 @@ export const getExecutiveStats = createServerFn({ method: "POST" })
     if (data.toDate) q = q.lte("uploaded_at", data.toDate);
     const { data: rows, error } = await q.limit(10000);
     if (error) throw new Error(error.message);
-
-    // Fetch ELC totals per executive (region-scoped)
-    let cq = supabaseAdmin
-      .from("customers")
-      .select("executive_sales, region");
-    if (effRegion) cq = cq.eq("region", effRegion);
-    const { data: customers, error: cErr } = await cq.limit(50000);
-    if (cErr) throw new Error(cErr.message);
-    const elcMap = new Map<string, number>();
-    for (const c of customers ?? []) {
-      const key = `${c.executive_sales || "(Unassigned)"}|${c.region}`;
-      elcMap.set(key, (elcMap.get(key) ?? 0) + 1);
-    }
-
     const agg = new Map<string, { count: number; total: number; region: string }>();
     let totalCount = 0;
     let totalAmount = 0;
@@ -185,22 +161,14 @@ export const getExecutiveStats = createServerFn({ method: "POST" })
       totalCount += 1;
       totalAmount += Number(r.amount_paid ?? 0);
     }
-    // Include executives with ELCs but zero proofs
-    for (const [key] of elcMap) {
-      if (!agg.has(key)) {
-        const [, regionPart] = key.split("|");
-        agg.set(key, { count: 0, total: 0, region: regionPart });
-      }
-    }
     const stats = Array.from(agg.entries())
       .map(([k, v]) => ({
         executive_sales: k.split("|")[0],
         region: v.region,
         count: v.count,
         total: v.total,
-        elc_count: elcMap.get(k) ?? 0,
       }))
-      .sort((a, b) => b.count - a.count);
+      .sort((a, b) => b.total - a.total);
     return {
       stats,
       totalCount,
