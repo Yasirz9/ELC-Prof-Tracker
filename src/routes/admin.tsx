@@ -286,6 +286,7 @@ function Dashboard() {
       toast.error(e instanceof Error ? e.message : "Stats failed");
     } finally {
       setStatLoading(false);
+    }
   }
 
   async function handlePrintScreen() {
