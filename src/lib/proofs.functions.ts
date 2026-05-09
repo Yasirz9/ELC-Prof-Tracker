@@ -204,23 +204,7 @@ const zipSchema = z.object({
   toDate: z.string().datetime().optional(),
 });
 
-function safeName(s: string): string {
-  return s.replace(/[\\/:*?"<>|]+/g, "_");
-}
-
-function dateFolder(iso: string): string {
-  const d = new Date(iso);
-  const day = String(d.getUTCDate()).padStart(2, "0");
-  const month = d.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
-  return `${day} ${month}`;
-}
-
-function extFromMime(mime: string): string {
-  if (mime === "image/png") return "png";
-  if (mime === "image/jpeg") return "jpg";
-  if (mime === "application/pdf") return "pdf";
-  return "bin";
-}
+// helpers moved to proofs.server.ts
 
 export const getBulkZip = createServerFn({ method: "POST" })
   .inputValidator((input) => zipSchema.parse(input))
