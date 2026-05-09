@@ -769,10 +769,10 @@ function SortHead({
   className,
 }: {
   label: string;
-  k: "executive_sales" | "region" | "count" | "total";
+  k: "executive_sales" | "region" | "count" | "elc_count";
   sortKey: string;
   sortDir: "asc" | "desc";
-  onClick: (k: "executive_sales" | "region" | "count" | "total") => void;
+  onClick: (k: "executive_sales" | "region" | "count" | "elc_count") => void;
   className?: string;
 }) {
   return (
