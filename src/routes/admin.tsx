@@ -286,6 +286,22 @@ function Dashboard() {
       toast.error(e instanceof Error ? e.message : "Stats failed");
     } finally {
       setStatLoading(false);
+  }
+
+  async function handlePrintScreen() {
+    if (!perfRef.current) return;
+    try {
+      const canvas = await html2canvas(perfRef.current, {
+        backgroundColor: getComputedStyle(document.body).backgroundColor || "#ffffff",
+        scale: 2,
+      });
+      const link = document.createElement("a");
+      link.download = `executive-sales-${new Date().toISOString().slice(0, 10)}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+      toast.success("Screenshot downloaded");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Screenshot failed");
     }
   }
 
