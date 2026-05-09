@@ -52,7 +52,9 @@ import {
   ArrowUpDown,
   Trash2,
   UserPlus,
+  Camera,
 } from "lucide-react";
+import html2canvas from "html2canvas";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
@@ -201,15 +203,16 @@ function Dashboard() {
   const [forbidden, setForbidden] = useState(false);
 
   const [statRows, setStatRows] = useState<
-    { executive_sales: string; region: string; count: number; total: number }[]
+    { executive_sales: string; region: string; count: number; total: number; elc_count: number }[]
   >([]);
   const [totals, setTotals] = useState({ count: 0, amount: 0 });
   const [statFrom, setStatFrom] = useState("");
   const [statTo, setStatTo] = useState("");
   const [statRegion, setStatRegion] = useState<string>("all");
   const [statLoading, setStatLoading] = useState(false);
-  const [sortKey, setSortKey] = useState<"executive_sales" | "region" | "count" | "total">("total");
+  const [sortKey, setSortKey] = useState<"executive_sales" | "region" | "count" | "elc_count">("count");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const perfRef = useRef<HTMLDivElement>(null);
 
   const [importing, setImporting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -283,6 +286,23 @@ function Dashboard() {
       toast.error(e instanceof Error ? e.message : "Stats failed");
     } finally {
       setStatLoading(false);
+    }
+  }
+
+  async function handlePrintScreen() {
+    if (!perfRef.current) return;
+    try {
+      const canvas = await html2canvas(perfRef.current, {
+        backgroundColor: getComputedStyle(document.body).backgroundColor || "#ffffff",
+        scale: 2,
+      });
+      const link = document.createElement("a");
+      link.download = `executive-sales-${new Date().toISOString().slice(0, 10)}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+      toast.success("Screenshot downloaded");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Screenshot failed");
     }
   }
 
@@ -506,51 +526,58 @@ function Dashboard() {
                   </Button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                  <StatBox label="Total Proofs" value={totals.count.toString()} />
-                  <StatBox label="Total Amount (PKR)" value={fmtPKR(totals.amount)} />
-                  <StatBox label="Executives" value={new Set(statRows.map((s) => s.executive_sales)).size.toString()} />
-                  <StatBox
-                    label="Avg / Proof"
-                    value={fmtPKR(totals.count ? Math.round(totals.amount / totals.count) : 0)}
-                  />
-                </div>
+                <div ref={perfRef} className="space-y-4 bg-background p-2 rounded-lg">
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                    <StatBox label="Total Proofs" value={totals.count.toString()} />
+                    <StatBox
+                      label="Executives"
+                      value={new Set(statRows.map((s) => s.executive_sales)).size.toString()}
+                    />
+                    <StatBox
+                      label="Total ELCs"
+                      value={statRows.reduce((s, r) => s + (r.elc_count || 0), 0).toString()}
+                    />
+                  </div>
 
-                <div className="overflow-hidden rounded-lg border">
-                  <Table>
-                    <TableHeader className="bg-muted/50 sticky top-0">
-                      <TableRow>
-                        <SortHead label="Executive Sales" k="executive_sales" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-                        <SortHead label="Region" k="region" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-                        <SortHead label="Proofs" k="count" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} className="text-right" />
-                        <SortHead label="Total (PKR)" k="total" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} className="text-right" />
-                        <TableHead className="text-right">Avg</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {sortedStats.length === 0 ? (
+                  <div className="overflow-hidden rounded-lg border">
+                    <Table>
+                      <TableHeader className="bg-muted/50 sticky top-0">
                         <TableRow>
-                          <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
-                            No data for selected range.
-                          </TableCell>
+                          <SortHead label="Executive Sales" k="executive_sales" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+                          <SortHead label="Region" k="region" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+                          <SortHead label="Count of Proof <> ELC" k="count" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} className="text-right" />
                         </TableRow>
-                      ) : (
-                        sortedStats.map((r, i) => (
-                          <TableRow key={`${r.executive_sales}-${r.region}`} className={i % 2 ? "bg-muted/20" : ""}>
-                            <TableCell className="font-medium">{r.executive_sales}</TableCell>
-                            <TableCell>
-                              <Badge variant="secondary">{r.region}</Badge>
-                            </TableCell>
-                            <TableCell className="text-right">{r.count}</TableCell>
-                            <TableCell className="text-right font-mono">{fmtPKR(r.total)}</TableCell>
-                            <TableCell className="text-right font-mono text-muted-foreground">
-                              {fmtPKR(Math.round(r.total / Math.max(r.count, 1)))}
+                      </TableHeader>
+                      <TableBody>
+                        {sortedStats.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={3} className="py-10 text-center text-muted-foreground">
+                              No data for selected range.
                             </TableCell>
                           </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
+                        ) : (
+                          sortedStats.map((r, i) => (
+                            <TableRow key={`${r.executive_sales}-${r.region}`} className={i % 2 ? "bg-muted/20" : ""}>
+                              <TableCell className="font-medium">{r.executive_sales}</TableCell>
+                              <TableCell>
+                                <Badge variant="secondary">{r.region}</Badge>
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                <span className="text-primary font-semibold">{r.count}</span>
+                                <span className="text-muted-foreground"> / {r.elc_count}</span>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+
+                <div className="flex justify-end">
+                  <Button variant="outline" onClick={handlePrintScreen}>
+                    <Camera className="mr-2 h-4 w-4" /> Print Screen
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -768,10 +795,10 @@ function SortHead({
   className,
 }: {
   label: string;
-  k: "executive_sales" | "region" | "count" | "total";
+  k: "executive_sales" | "region" | "count" | "elc_count";
   sortKey: string;
   sortDir: "asc" | "desc";
-  onClick: (k: "executive_sales" | "region" | "count" | "total") => void;
+  onClick: (k: "executive_sales" | "region" | "count" | "elc_count") => void;
   className?: string;
 }) {
   return (

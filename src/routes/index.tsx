@@ -59,6 +59,7 @@ function TrackerPage() {
 
   const [mdn, setMdn] = useState("");
   const [customer, setCustomer] = useState<Customer | null>(null);
+  const [existingProof, setExistingProof] = useState<{ uploaded_at: string; amount_paid: number } | null>(null);
   const [lookingUp, setLookingUp] = useState(false);
   const [amountPaid, setAmountPaid] = useState<string>("");
   const [file, setFile] = useState<File | null>(null);
@@ -76,6 +77,7 @@ function TrackerPage() {
     if (err) return toast.error(err);
     setLookingUp(true);
     setDone(false);
+    setExistingProof(null);
     try {
       const res = await lookup({ data: { mdn } });
       if (!res.customer) {
@@ -92,6 +94,7 @@ function TrackerPage() {
           due_amount: Number(c.due_amount ?? 0),
           discount: Number(c.discount ?? 0),
         });
+        setExistingProof((res as any).existingProof ?? null);
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Lookup failed.");
@@ -136,6 +139,7 @@ function TrackerPage() {
     setAmountPaid("");
     setFile(null);
     setDone(false);
+    setExistingProof(null);
   }
 
   return (
@@ -280,6 +284,29 @@ function TrackerPage() {
                     <Button variant="outline" onClick={resetAll} className="mt-1">
                       <ArrowLeft className="mr-2 h-4 w-4" />
                       Submit another
+                    </Button>
+                  </div>
+                ) : existingProof ? (
+                  <div className="flex flex-col items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 py-8 text-center">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/15">
+                      <CheckCircle2 className="h-8 w-8 text-primary" />
+                    </div>
+                    <div className="text-lg font-semibold">
+                      Proof already uploaded on{" "}
+                      {new Date(existingProof.uploaded_at).toLocaleDateString("en-GB", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </div>
+                    <p className="max-w-sm text-sm text-muted-foreground">
+                      A payment proof for MDN{" "}
+                      <span className="font-mono font-medium text-foreground">{customer.mdn}</span>{" "}
+                      has already been submitted. Re-upload is not allowed.
+                    </p>
+                    <Button variant="outline" onClick={resetAll} className="mt-1">
+                      <ArrowLeft className="mr-2 h-4 w-4" />
+                      Check another MDN
                     </Button>
                   </div>
                 ) : (
