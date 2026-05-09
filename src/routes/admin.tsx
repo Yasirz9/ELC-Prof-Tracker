@@ -543,9 +543,9 @@ function Dashboard() {
                     <Table>
                       <TableHeader className="bg-muted/50 sticky top-0">
                         <TableRow>
-                          <SortHead label="Executive Sales" k="executive_sales" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
                           <SortHead label="Region" k="region" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-                          <SortHead label="Count of Proof <> ELC" k="count" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} className="text-right" />
+                          <SortHead label="Executive" k="executive_sales" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+                          <SortHead label="ELC Count" k="count" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} className="text-right" />
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -558,13 +558,12 @@ function Dashboard() {
                         ) : (
                           sortedStats.map((r, i) => (
                             <TableRow key={`${r.executive_sales}-${r.region}`} className={i % 2 ? "bg-muted/20" : ""}>
-                              <TableCell className="font-medium">{r.executive_sales}</TableCell>
                               <TableCell>
                                 <Badge variant="secondary">{r.region}</Badge>
                               </TableCell>
+                              <TableCell className="font-medium">{r.executive_sales}</TableCell>
                               <TableCell className="text-right font-mono">
                                 <span className="text-primary font-semibold">{r.count}</span>
-                                <span className="text-muted-foreground"> / {r.elc_count}</span>
                               </TableCell>
                             </TableRow>
                           ))
