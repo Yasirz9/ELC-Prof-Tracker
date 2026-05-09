@@ -1,20 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
-
-async function requireSuperAdmin(accessToken: string): Promise<string> {
-  if (!accessToken) throw new Error("Unauthorized");
-  const { data, error } = await supabaseAdmin.auth.getUser(accessToken);
-  if (error || !data.user) throw new Error("Unauthorized");
-  const { data: rows } = await supabaseAdmin
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", data.user.id)
-    .eq("role", "super_admin")
-    .maybeSingle();
-  if (!rows) throw new Error("Forbidden: super admin only.");
-  return data.user.id;
-}
+import { supabaseAdmin, requireSuperAdminUser as requireSuperAdmin } from "@/lib/users.server";
 
 export const whoAmI = createServerFn({ method: "POST" })
   .inputValidator((input: { accessToken: string }) => input)
