@@ -8,14 +8,14 @@ import {
   getBulkZip,
   getExecutiveStats,
   importCustomers,
-} from "@/lib/proofs.functions";
+} from "@/server/proofs.functions";
 import {
   whoAmI,
   listUsers,
   createUser,
   deleteUser,
   updateUserRegion,
-} from "@/lib/users.functions";
+} from "@/server/users.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";

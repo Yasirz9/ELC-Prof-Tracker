@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { getCustomerByMdn, uploadProof } from "@/lib/proofs.functions";
+import { getCustomerByMdn, uploadProof } from "@/server/proofs.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
