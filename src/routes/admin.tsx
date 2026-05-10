@@ -68,7 +68,7 @@ export const Route = createFileRoute("/admin")({
 type Proof = {
   id: string;
   mdn: string;
-  region: "MTR" | "FTR";
+  region: "MTR" | "FTR" | "SLTR" | "CTR" | "GTR" | "LTR";
   exchange_id: string;
   executive_sales: string | null;
   storage_path: string;
@@ -78,7 +78,7 @@ type Proof = {
   uploaded_at: string;
 };
 
-type Me = { role: "super_admin" | "admin" | null; region: "MTR" | "FTR" | null; email?: string | null };
+type Me = { role: "super_admin" | "admin" | null; region: "MTR" | "FTR" | "SLTR" | "CTR" | "GTR" | "LTR" | null; email?: string | null };
 
 function AdminPage() {
   const [session, setSession] = useState<unknown>(null);
@@ -243,7 +243,7 @@ function Dashboard() {
       const res = await list({
         data: {
           accessToken,
-          region: region === "all" ? undefined : (region as "MTR" | "FTR"),
+          region: region === "all" ? undefined : (region as "MTR" | "FTR" | "SLTR" | "CTR" | "GTR" | "LTR"),
           exchangeId: exchangeId || undefined,
           executiveSales: executiveSales || undefined,
           search: search || undefined,
@@ -272,7 +272,7 @@ function Dashboard() {
       const res = await stats({
         data: {
           accessToken,
-          region: statRegion === "all" ? undefined : (statRegion as "MTR" | "FTR"),
+          region: statRegion === "all" ? undefined : (statRegion as "MTR" | "FTR" | "SLTR" | "CTR" | "GTR" | "LTR"),
           fromDate: statFrom ? new Date(statFrom + "T00:00:00").toISOString() : undefined,
           toDate: statTo ? new Date(statTo + "T23:59:59.999").toISOString() : undefined,
         },
@@ -334,7 +334,7 @@ function Dashboard() {
       const res = await zip({
         data: {
           accessToken,
-          region: region === "all" ? undefined : (region as "MTR" | "FTR"),
+          region: region === "all" ? undefined : (region as "MTR" | "FTR" | "SLTR" | "CTR" | "GTR" | "LTR"),
           exchangeId: exchangeId || undefined,
           executiveSales: executiveSales || undefined,
           fromDate: fromDate ? new Date(fromDate + "T00:00:00").toISOString() : undefined,
@@ -814,7 +814,7 @@ function UsersPanel() {
   const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState("");
   const [pwd, setPwd] = useState("");
-  const [region, setRegion] = useState<"MTR" | "FTR" | "ALL">("MTR");
+  const [region, setRegion] = useState<"MTR" | "FTR" | "SLTR" | "CTR" | "GTR" | "LTR" | "ALL">("MTR");
   const [busy, setBusy] = useState(false);
 
   async function token() {
@@ -869,7 +869,7 @@ function UsersPanel() {
     }
   }
 
-  async function onChangeRegion(userId: string, value: "MTR" | "FTR" | "ALL") {
+  async function onChangeRegion(userId: string, value: "MTR" | "FTR" | "SLTR" | "CTR" | "GTR" | "LTR" | "ALL") {
     try {
       const accessToken = await token();
       await updateFn({ data: { accessToken, userId, region: value } });
@@ -901,7 +901,7 @@ function UsersPanel() {
             </div>
             <div className="space-y-2">
               <Label>Region</Label>
-              <Select value={region} onValueChange={(v) => setRegion(v as "MTR" | "FTR" | "ALL")}>
+              <Select value={region} onValueChange={(v) => setRegion(v as "MTR" | "FTR" | "SLTR" | "CTR" | "GTR" | "LTR" | "ALL")}>
                 <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="MTR">MTR</SelectItem>
@@ -949,7 +949,7 @@ function UsersPanel() {
                       {u.role === "admin" ? (
                         <Select
                           value={u.region ?? "ALL"}
-                          onValueChange={(v) => onChangeRegion(u.userId, v as "MTR" | "FTR" | "ALL")}
+                          onValueChange={(v) => onChangeRegion(u.userId, v as "MTR" | "FTR" | "SLTR" | "CTR" | "GTR" | "LTR" | "ALL")}
                         >
                           <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
                           <SelectContent>

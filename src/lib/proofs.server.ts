@@ -7,7 +7,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 export type AdminCtx = {
   userId: string;
   role: "admin" | "super_admin";
-  region: "MTR" | "FTR" | null;
+  region: "MTR" | "FTR" | "SLTR" | "CTR" | "GTR" | "LTR" | null;
 };
 
 export async function requireAdmin(accessToken: string): Promise<AdminCtx> {
@@ -28,7 +28,7 @@ export async function requireAdmin(accessToken: string): Promise<AdminCtx> {
   return {
     userId,
     role: "admin",
-    region: (adm.region as "MTR" | "FTR" | null) ?? null,
+    region: (adm.region as "MTR" | "FTR" | "SLTR" | "CTR" | "GTR" | "LTR" | null) ?? null,
   };
 }
 
@@ -48,8 +48,8 @@ export async function requireSuperAdminUserId(accessToken: string): Promise<stri
 
 export function scopeRegion(
   ctx: AdminCtx,
-  requested?: "MTR" | "FTR",
-): "MTR" | "FTR" | undefined {
+  requested?: "MTR" | "FTR" | "SLTR" | "CTR" | "GTR" | "LTR",
+): "MTR" | "FTR" | "SLTR" | "CTR" | "GTR" | "LTR" | undefined {
   if (ctx.region) {
     if (requested && requested !== ctx.region) {
       throw new Error("Forbidden: outside your region.");
