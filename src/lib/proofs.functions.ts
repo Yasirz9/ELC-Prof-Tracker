@@ -8,8 +8,7 @@ import {
   validateMdn,
   type Region,
 } from "@/lib/proof-utils";
-import { zipSync, strToU8 } from "fflate";
-import ExcelJS from "exceljs";
+import { zipSync } from "fflate";
 
 // ---------- Public: lookup customer ----------
 export const getCustomerByMdn = createServerFn({ method: "POST" })
@@ -303,6 +302,7 @@ export const getBulkZip = createServerFn({ method: "POST" })
     if (Object.keys(files).length === 0) throw new Error("Failed to fetch files.");
 
     // Build Excel summary with ALL customers + proof status
+    const { default: ExcelJS } = await import("exceljs");
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet("Customers");
     ws.columns = [
