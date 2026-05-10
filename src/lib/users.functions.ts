@@ -1,20 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
-
-async function requireSuperAdmin(accessToken: string): Promise<string> {
-  if (!accessToken) throw new Error("Unauthorized");
-  const { data, error } = await supabaseAdmin.auth.getUser(accessToken);
-  if (error || !data.user) throw new Error("Unauthorized");
-  const { data: rows } = await supabaseAdmin
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", data.user.id)
-    .eq("role", "super_admin")
-    .maybeSingle();
-  if (!rows) throw new Error("Forbidden: super admin only.");
-  return data.user.id;
-}
+import { supabaseAdmin, requireSuperAdminUserId } from "@/lib/proofs.server";
 
 export const whoAmI = createServerFn({ method: "POST" })
   .inputValidator((input: { accessToken: string }) => input)
@@ -40,7 +26,7 @@ export const whoAmI = createServerFn({ method: "POST" })
 export const listUsers = createServerFn({ method: "POST" })
   .inputValidator((input: { accessToken: string }) => input)
   .handler(async ({ data }) => {
-    await requireSuperAdmin(data.accessToken);
+    await requireSuperAdminUserId(data.accessToken);
     const { data: roleRows, error } = await supabaseAdmin
       .from("user_roles")
       .select("id, user_id, role, region");
@@ -63,17 +49,19 @@ export const listUsers = createServerFn({ method: "POST" })
     };
   });
 
-const createSchema = z.object({
-  accessToken: z.string().min(1),
-  email: z.string().email(),
-  password: z.string().min(6).max(72),
-  region: z.enum(["MTR", "FTR", "ALL"]),
-});
-
 export const createUser = createServerFn({ method: "POST" })
-  .inputValidator((input) => createSchema.parse(input))
+  .inputValidator((input) =>
+    z
+      .object({
+        accessToken: z.string().min(1),
+        email: z.string().email(),
+        password: z.string().min(6).max(72),
+        region: z.enum(["MTR", "FTR", "ALL"]),
+      })
+      .parse(input),
+  )
   .handler(async ({ data }) => {
-    await requireSuperAdmin(data.accessToken);
+    await requireSuperAdminUserId(data.accessToken);
     const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
       email: data.email,
       password: data.password,
@@ -93,7 +81,7 @@ export const createUser = createServerFn({ method: "POST" })
 export const deleteUser = createServerFn({ method: "POST" })
   .inputValidator((input: { accessToken: string; userId: string }) => input)
   .handler(async ({ data }) => {
-    const me = await requireSuperAdmin(data.accessToken);
+    const me = await requireSuperAdminUserId(data.accessToken);
     if (data.userId === me) throw new Error("Cannot delete yourself.");
     await supabaseAdmin.from("user_roles").delete().eq("user_id", data.userId);
     const { error } = await supabaseAdmin.auth.admin.deleteUser(data.userId);
@@ -106,7 +94,7 @@ export const updateUserRegion = createServerFn({ method: "POST" })
     (input: { accessToken: string; userId: string; region: "MTR" | "FTR" | "ALL" }) => input,
   )
   .handler(async ({ data }) => {
-    await requireSuperAdmin(data.accessToken);
+    await requireSuperAdminUserId(data.accessToken);
     const region = data.region === "ALL" ? null : data.region;
     const { error } = await supabaseAdmin
       .from("user_roles")
