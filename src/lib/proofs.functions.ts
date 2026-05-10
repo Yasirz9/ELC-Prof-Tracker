@@ -1,6 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import {
+  supabaseAdmin,
+  requireAdmin,
+  scopeRegion,
+  safeName,
+  dateFolder,
+  extFromMime,
+} from "@/lib/proofs.server";
 import {
   ALLOWED_MIME_TYPES,
   MAX_FILE_SIZE,
