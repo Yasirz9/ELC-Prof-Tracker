@@ -710,7 +710,7 @@ function Dashboard() {
                     mdn,name,region,exchange_id,executive_sales,due_amount,discount
                   </code>
                   <ul className="mt-3 list-disc pl-5 text-xs text-muted-foreground space-y-1">
-                    <li><b>region</b> must be <code>MTR</code> or <code>FTR</code></li>
+                    <li><b>region</b> must be one of <code>MTR</code>, <code>FTR</code>, <code>SLTR</code>, <code>CTR</code>, <code>GTR</code>, <code>LTR</code></li>
                     <li><b>mdn</b> 10–15 digits — unique key, duplicates in file are skipped</li>
                     <li><b>due_amount</b> &amp; <b>discount</b> are numbers (default 0)</li>
                     <li><b>executive_sales</b> is the sales person's name (optional)</li>
