@@ -8,8 +8,7 @@ import {
   validateMdn,
   type Region,
 } from "@/lib/proof-utils";
-import { zipSync, strToU8 } from "fflate";
-import ExcelJS from "exceljs";
+import { zipSync } from "fflate";
 
 // ---------- Public: lookup customer ----------
 export const getCustomerByMdn = createServerFn({ method: "POST" })
