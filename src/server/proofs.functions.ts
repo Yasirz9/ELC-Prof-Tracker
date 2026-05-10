@@ -302,6 +302,7 @@ export const getBulkZip = createServerFn({ method: "POST" })
     if (Object.keys(files).length === 0) throw new Error("Failed to fetch files.");
 
     // Build Excel summary with ALL customers + proof status
+    const { default: ExcelJS } = await import("exceljs");
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet("Customers");
     ws.columns = [
