@@ -967,6 +967,10 @@ function UsersPanel() {
                           <SelectContent>
                             <SelectItem value="MTR">MTR</SelectItem>
                             <SelectItem value="FTR">FTR</SelectItem>
+                            <SelectItem value="SLTR">SLTR</SelectItem>
+                            <SelectItem value="CTR">CTR</SelectItem>
+                            <SelectItem value="GTR">GTR</SelectItem>
+                            <SelectItem value="LTR">LTR</SelectItem>
                             <SelectItem value="ALL">All</SelectItem>
                           </SelectContent>
                         </Select>
