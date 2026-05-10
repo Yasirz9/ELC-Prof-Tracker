@@ -1,6 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import {
+  supabaseAdmin,
+  requireAdmin,
+  scopeRegion,
+  safeName,
+  dateFolder,
+  extFromMime,
+} from "@/lib/proofs.server";
 import {
   ALLOWED_MIME_TYPES,
   MAX_FILE_SIZE,
@@ -84,51 +91,6 @@ export const uploadProof = createServerFn({ method: "POST" })
 
     return { ok: true, storagePath };
   });
-
-// ---------- Admin auth helper ----------
-type AdminCtx = { userId: string; role: "admin" | "super_admin"; region: "MTR" | "FTR" | null };
-
-async function requireAdmin(accessToken: string): Promise<AdminCtx> {
-  if (!accessToken) throw new Error("Unauthorized");
-  const { data, error } = await supabaseAdmin.auth.getUser(accessToken);
-  if (error || !data.user) throw new Error("Unauthorized");
-  const userId = data.user.id;
-  const { data: rows, error: rErr } = await supabaseAdmin
-    .from("user_roles")
-    .select("role, region")
-    .eq("user_id", userId)
-    .in("role", ["admin", "super_admin"]);
-  if (rErr) throw new Error(rErr.message);
-  if (!rows || rows.length === 0) throw new Error("Forbidden: admin access required.");
-  const sup = rows.find((r) => r.role === "super_admin");
-  if (sup) return { userId, role: "super_admin", region: null };
-  const adm = rows[0];
-  return {
-    userId,
-    role: "admin",
-    region: (adm.region as "MTR" | "FTR" | null) ?? null,
-  };
-}
-
-async function requireSuperAdmin(accessToken: string): Promise<string> {
-  const ctx = await requireAdmin(accessToken);
-  if (ctx.role !== "super_admin") throw new Error("Forbidden: super admin only.");
-  return ctx.userId;
-}
-
-// Apply region scope: if admin has assigned region, force-filter to it
-function scopeRegion(
-  ctx: AdminCtx,
-  requested?: "MTR" | "FTR",
-): "MTR" | "FTR" | undefined {
-  if (ctx.region) {
-    if (requested && requested !== ctx.region) {
-      throw new Error("Forbidden: outside your region.");
-    }
-    return ctx.region;
-  }
-  return requested;
-}
 
 // ---------- Admin: list proofs ----------
 const listSchema = z.object({
@@ -238,24 +200,6 @@ const zipSchema = z.object({
   fromDate: z.string().datetime().optional(),
   toDate: z.string().datetime().optional(),
 });
-
-function safeName(s: string): string {
-  return s.replace(/[\\/:*?"<>|]+/g, "_");
-}
-
-function dateFolder(iso: string): string {
-  const d = new Date(iso);
-  const day = String(d.getUTCDate()).padStart(2, "0");
-  const month = d.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
-  return `${day} ${month}`;
-}
-
-function extFromMime(mime: string): string {
-  if (mime === "image/png") return "png";
-  if (mime === "image/jpeg") return "jpg";
-  if (mime === "application/pdf") return "pdf";
-  return "bin";
-}
 
 export const getBulkZip = createServerFn({ method: "POST" })
   .inputValidator((input) => zipSchema.parse(input))
