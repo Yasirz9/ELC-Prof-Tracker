@@ -34,7 +34,7 @@ export const Route = createFileRoute("/")({
 type Customer = {
   mdn: string;
   name: string;
-  region: "MTR" | "FTR";
+  region: "MTR" | "FTR" | "SLTR" | "CTR" | "GTR" | "LTR";
   exchange_id: string;
   executive_sales: string | null;
   due_amount: number;

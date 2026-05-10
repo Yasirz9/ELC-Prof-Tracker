@@ -1,6 +1,6 @@
 export const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "application/pdf"] as const;
 export const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
-export const REGIONS = ["MTR", "FTR"] as const;
+export const REGIONS = ["MTR", "FTR", "SLTR", "CTR", "GTR", "LTR"] as const;
 export type Region = (typeof REGIONS)[number];
 
 export const MIME_TO_EXT: Record<string, string> = {

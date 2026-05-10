@@ -17,7 +17,7 @@ export const whoAmI = createServerFn({ method: "POST" })
     if (adm)
       return {
         role: "admin" as const,
-        region: (adm.region as "MTR" | "FTR" | null) ?? null,
+        region: (adm.region as "MTR" | "FTR" | "SLTR" | "CTR" | "GTR" | "LTR" | null) ?? null,
         email: u.user.email,
       };
     return { role: null, region: null as null, email: u.user.email };
@@ -56,7 +56,7 @@ export const createUser = createServerFn({ method: "POST" })
         accessToken: z.string().min(1),
         email: z.string().email(),
         password: z.string().min(6).max(72),
-        region: z.enum(["MTR", "FTR", "ALL"]),
+        region: z.enum(["MTR","FTR","SLTR","CTR","GTR","LTR","ALL"]),
       })
       .parse(input),
   )
@@ -91,7 +91,7 @@ export const deleteUser = createServerFn({ method: "POST" })
 
 export const updateUserRegion = createServerFn({ method: "POST" })
   .inputValidator(
-    (input: { accessToken: string; userId: string; region: "MTR" | "FTR" | "ALL" }) => input,
+    (input: { accessToken: string; userId: string; region: "MTR" | "FTR" | "SLTR" | "CTR" | "GTR" | "LTR" | "ALL" }) => input,
   )
   .handler(async ({ data }) => {
     await requireSuperAdminUserId(data.accessToken);

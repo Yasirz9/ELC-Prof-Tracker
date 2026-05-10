@@ -95,7 +95,7 @@ export const uploadProof = createServerFn({ method: "POST" })
 // ---------- Admin: list proofs ----------
 const listSchema = z.object({
   accessToken: z.string().min(1),
-  region: z.enum(["MTR", "FTR"]).optional(),
+  region: z.enum(["MTR","FTR","SLTR","CTR","GTR","LTR"]).optional(),
   exchangeId: z.string().min(1).max(64).optional(),
   executiveSales: z.string().min(1).max(128).optional(),
   search: z.string().min(1).max(64).optional(),
@@ -128,7 +128,7 @@ export const listProofs = createServerFn({ method: "POST" })
 // ---------- Admin: stats by Executive Sales ----------
 const statsSchema = z.object({
   accessToken: z.string().min(1),
-  region: z.enum(["MTR", "FTR"]).optional(),
+  region: z.enum(["MTR","FTR","SLTR","CTR","GTR","LTR"]).optional(),
   fromDate: z.string().datetime().optional(),
   toDate: z.string().datetime().optional(),
 });
@@ -194,7 +194,7 @@ export const getSignedUrl = createServerFn({ method: "POST" })
 // ---------- Admin: bulk ZIP (date/region structure + Excel summary) ----------
 const zipSchema = z.object({
   accessToken: z.string().min(1),
-  region: z.enum(["MTR", "FTR"]).optional(),
+  region: z.enum(["MTR","FTR","SLTR","CTR","GTR","LTR"]).optional(),
   exchangeId: z.string().min(1).max(64).optional(),
   executiveSales: z.string().min(1).max(128).optional(),
   fromDate: z.string().datetime().optional(),
@@ -340,7 +340,7 @@ export const importCustomers = createServerFn({ method: "POST" })
     const valid: {
       mdn: string;
       name: string;
-      region: "MTR" | "FTR";
+      region: "MTR" | "FTR" | "SLTR" | "CTR" | "GTR" | "LTR";
       exchange_id: string;
       executive_sales: string | null;
       due_amount: number;
@@ -364,8 +364,8 @@ export const importCustomers = createServerFn({ method: "POST" })
         errors.push({ row: r.rowIndex, message: "Missing name" });
         continue;
       }
-      if (region !== "MTR" && region !== "FTR") {
-        errors.push({ row: r.rowIndex, message: `Region must be MTR or FTR (got "${r.region}")` });
+      if (!["MTR","FTR","SLTR","CTR","GTR","LTR"].includes(region)) {
+        errors.push({ row: r.rowIndex, message: `Region must be one of MTR/FTR/SLTR/CTR/GTR/LTR (got "${r.region}")` });
         continue;
       }
       if (ctx.region && region !== ctx.region) {
@@ -387,7 +387,7 @@ export const importCustomers = createServerFn({ method: "POST" })
       valid.push({
         mdn,
         name,
-        region: region as "MTR" | "FTR",
+        region: region as "MTR" | "FTR" | "SLTR" | "CTR" | "GTR" | "LTR",
         exchange_id: exch,
         executive_sales: exec || null,
         due_amount: Number.isFinite(r.due_amount) ? Number(r.due_amount) : 0,
