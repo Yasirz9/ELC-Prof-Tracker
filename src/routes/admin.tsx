@@ -210,8 +210,10 @@ function Dashboard() {
   const [statTo, setStatTo] = useState("");
   const [statRegion, setStatRegion] = useState<string>("all");
   const [statLoading, setStatLoading] = useState(false);
-  const [sortKey, setSortKey] = useState<"executive_sales" | "region" | "count" | "total">("total");
+  const [sortKey, setSortKey] = useState<"executive_sales" | "region" | "count">("count");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const statCardRef = useRef<HTMLDivElement>(null);
+  const [snapping, setSnapping] = useState(false);
 
   const [importing, setImporting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
