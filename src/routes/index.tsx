@@ -276,7 +276,23 @@ function TrackerPage() {
                   </div>
                 </div>
 
-                {done ? (
+                {alreadyUploaded ? (
+                  <div className="flex flex-col items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 py-8 text-center">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/20">
+                      <CheckCircle2 className="h-8 w-8 text-amber-600" />
+                    </div>
+                    <div className="text-lg font-semibold">Proof already uploaded on {alreadyUploaded}</div>
+                    <p className="max-w-sm text-sm text-muted-foreground">
+                      A payment proof for MDN{" "}
+                      <span className="font-mono font-medium text-foreground">{customer.mdn}</span>{" "}
+                      is already on record. Duplicate uploads are not allowed.
+                    </p>
+                    <Button variant="outline" onClick={resetAll} className="mt-1">
+                      <ArrowLeft className="mr-2 h-4 w-4" />
+                      Check another MDN
+                    </Button>
+                  </div>
+                ) : done ? (
                   <div className="flex flex-col items-center gap-3 rounded-xl border border-[oklch(0.62_0.16_155)]/30 bg-[oklch(0.62_0.16_155)]/10 py-8 text-center">
                     <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[oklch(0.62_0.16_155)]/20">
                       <CheckCircle2 className="h-8 w-8 text-[oklch(0.62_0.16_155)]" />
