@@ -52,7 +52,9 @@ import {
   ArrowUpDown,
   Trash2,
   UserPlus,
+  Camera,
 } from "lucide-react";
+import { toPng } from "html-to-image";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
