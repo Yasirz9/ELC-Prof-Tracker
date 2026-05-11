@@ -780,10 +780,10 @@ function SortHead({
   className,
 }: {
   label: string;
-  k: "executive_sales" | "region" | "count" | "total";
+  k: "executive_sales" | "region" | "count";
   sortKey: string;
   sortDir: "asc" | "desc";
-  onClick: (k: "executive_sales" | "region" | "count" | "total") => void;
+  onClick: (k: "executive_sales" | "region" | "count") => void;
   className?: string;
 }) {
   return (
