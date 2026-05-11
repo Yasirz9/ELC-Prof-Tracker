@@ -144,6 +144,7 @@ function TrackerPage() {
     setAmountPaid("");
     setFile(null);
     setDone(false);
+    setAlreadyUploaded(null);
   }
 
   return (
