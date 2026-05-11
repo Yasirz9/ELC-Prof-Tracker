@@ -463,7 +463,7 @@ function Dashboard() {
 
           {/* Overview */}
           <TabsContent value="overview" className="space-y-6">
-            <Card className="shadow-[var(--shadow-card)]">
+            <Card className="shadow-[var(--shadow-card)]" ref={statCardRef}>
               <CardHeader>
                 <CardTitle>Executive Sales Performance</CardTitle>
                 <CardDescription>Payment proofs received per Executive Sales person.</CardDescription>
@@ -514,51 +514,70 @@ function Dashboard() {
                   </Button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-2">
                   <StatBox label="Total Proofs" value={totals.count.toString()} />
-                  <StatBox label="Total Amount (PKR)" value={fmtPKR(totals.amount)} />
                   <StatBox label="Executives" value={new Set(statRows.map((s) => s.executive_sales)).size.toString()} />
-                  <StatBox
-                    label="Avg / Proof"
-                    value={fmtPKR(totals.count ? Math.round(totals.amount / totals.count) : 0)}
-                  />
                 </div>
 
                 <div className="overflow-hidden rounded-lg border">
                   <Table>
                     <TableHeader className="bg-muted/50 sticky top-0">
                       <TableRow>
-                        <SortHead label="Executive Sales" k="executive_sales" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
                         <SortHead label="Region" k="region" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-                        <SortHead label="Proofs" k="count" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} className="text-right" />
-                        <SortHead label="Total (PKR)" k="total" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} className="text-right" />
-                        <TableHead className="text-right">Avg</TableHead>
+                        <SortHead label="Executive Sales" k="executive_sales" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+                        <SortHead label="Count of Proof" k="count" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} className="text-right" />
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {sortedStats.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
+                          <TableCell colSpan={3} className="py-10 text-center text-muted-foreground">
                             No data for selected range.
                           </TableCell>
                         </TableRow>
                       ) : (
                         sortedStats.map((r, i) => (
                           <TableRow key={`${r.executive_sales}-${r.region}`} className={i % 2 ? "bg-muted/20" : ""}>
-                            <TableCell className="font-medium">{r.executive_sales}</TableCell>
                             <TableCell>
                               <Badge variant="secondary">{r.region}</Badge>
                             </TableCell>
+                            <TableCell className="font-medium">{r.executive_sales}</TableCell>
                             <TableCell className="text-right">{r.count}</TableCell>
-                            <TableCell className="text-right font-mono">{fmtPKR(r.total)}</TableCell>
-                            <TableCell className="text-right font-mono text-muted-foreground">
-                              {fmtPKR(Math.round(r.total / Math.max(r.count, 1)))}
-                            </TableCell>
                           </TableRow>
                         ))
                       )}
                     </TableBody>
                   </Table>
+                </div>
+
+                <div className="flex justify-end">
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      if (!statCardRef.current) return;
+                      setSnapping(true);
+                      try {
+                        const dataUrl = await toPng(statCardRef.current, {
+                          cacheBust: true,
+                          backgroundColor: "#ffffff",
+                          pixelRatio: 2,
+                        });
+                        const a = document.createElement("a");
+                        a.href = dataUrl;
+                        a.download = `executive-sales-${new Date().toISOString().slice(0, 10)}.png`;
+                        a.click();
+                        toast.success("Screenshot saved");
+                      } catch (e) {
+                        toast.error(e instanceof Error ? e.message : "Screenshot failed");
+                      } finally {
+                        setSnapping(false);
+                      }
+                    }}
+                    disabled={snapping}
+                  >
+                    {snapping ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Camera className="mr-2 h-4 w-4" />}
+                    Download Screenshot
+                  </Button>
                 </div>
               </CardContent>
             </Card>
