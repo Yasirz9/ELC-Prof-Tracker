@@ -31,8 +31,16 @@ export const getCustomerByMdn = createServerFn({ method: "POST" })
       .eq("mdn", data.mdn)
       .maybeSingle();
     if (error) throw new Error(error.message);
-    if (!customer) return { customer: null as null };
-    return { customer };
+    if (!customer) return { customer: null as null, existingProof: null as null };
+    const { data: existing } = await supabaseAdmin
+      .from("payment_proofs")
+      .select("uploaded_at")
+      .eq("mdn", data.mdn)
+      .maybeSingle();
+    return {
+      customer,
+      existingProof: existing ? { uploaded_at: existing.uploaded_at } : null,
+    };
   });
 
 // ---------- Public: upload proof ----------
@@ -54,6 +62,18 @@ export const uploadProof = createServerFn({ method: "POST" })
       .maybeSingle();
     if (cErr) throw new Error(cErr.message);
     if (!customer) throw new Error("Customer not found for this MDN.");
+
+    const { data: existing } = await supabaseAdmin
+      .from("payment_proofs")
+      .select("uploaded_at")
+      .eq("mdn", data.mdn)
+      .maybeSingle();
+    if (existing) {
+      const d = new Date(existing.uploaded_at).toLocaleDateString("en-GB", {
+        day: "2-digit", month: "short", year: "numeric",
+      });
+      throw new Error(`Proof already uploaded on ${d}`);
+    }
 
     const buffer = Buffer.from(data.fileBase64, "base64");
     if (buffer.byteLength !== data.size) throw new Error("File size mismatch.");
