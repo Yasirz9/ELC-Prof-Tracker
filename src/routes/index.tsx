@@ -77,6 +77,7 @@ function TrackerPage() {
     if (err) return toast.error(err);
     setLookingUp(true);
     setDone(false);
+    setAlreadyUploaded(null);
     try {
       const res = await lookup({ data: { mdn } });
       if (!res.customer) {
@@ -93,6 +94,12 @@ function TrackerPage() {
           due_amount: Number(c.due_amount ?? 0),
           discount: Number(c.discount ?? 0),
         });
+        if (res.existingProof) {
+          const d = new Date(res.existingProof.uploaded_at).toLocaleDateString("en-GB", {
+            day: "2-digit", month: "short", year: "numeric",
+          });
+          setAlreadyUploaded(d);
+        }
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Lookup failed.");
