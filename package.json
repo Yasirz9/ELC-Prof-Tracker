@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "vite build && node -e \"require('fs').unlinkSync('dist/client/wrangler.json')\"",
+    "build": "vite build && node -e \"\nconst fs = require('fs');\n// Fix dist/client/wrangler.json - remove Pages-incompatible fields\nconst wj = JSON.parse(fs.readFileSync('dist/client/wrangler.json','utf8'));\ndelete wj.assets;\ndelete wj.triggers;\ndelete wj.dev;\ndelete wj.definedEnvironments;\ndelete wj.ai_search_namespaces;\ndelete wj.ai_search;\ndelete wj.secrets_store_secrets;\ndelete wj.unsafe_hello_world;\ndelete wj.flagship;\ndelete wj.worker_loaders;\ndelete wj.ratelimits;\ndelete wj.vpc_services;\ndelete wj.vpc_networks;\ndelete wj.python_modules;\nif(wj.triggers && typeof wj.triggers === 'object') wj.triggers = {crons:[]};\nfs.writeFileSync('dist/client/wrangler.json', JSON.stringify(wj, null, 2));\n// Fix .wrangler/deploy/config.json\nfs.mkdirSync('.wrangler/deploy', {recursive:true});\nfs.writeFileSync('.wrangler/deploy/config.json', JSON.stringify({configPath:'dist/client/wrangler.json'}));\nconsole.log('Wrangler configs fixed');\n\"",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
