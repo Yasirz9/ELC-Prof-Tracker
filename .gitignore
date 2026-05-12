@@ -17,7 +17,8 @@ dist-ssr
 *.local
 
 # Wrangler / Cloudflare
-.wrangler/
+.wrangler/logs
+.wrangler/tmp
 .dev.vars
 
 # Editor directories and files
