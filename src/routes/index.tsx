@@ -24,7 +24,7 @@ import { ALLOWED_MIME_TYPES, MAX_FILE_SIZE, validateFile, validateMdn } from "@/
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "ELC Payment Record Tracker" },
+      { title: "ELC Prof Tracker" },
       { name: "description", content: "Fetch your ELC account, view dues, and submit payment proof securely." },
     ],
   }),
@@ -168,7 +168,7 @@ function TrackerPage() {
               <Receipt className="h-5 w-5" />
             </div>
             <div>
-              <div className="text-sm font-bold tracking-tight">ELC Payment Tracker</div>
+              <div className="text-sm font-bold tracking-tight">ELC Prof Tracker</div>
               <div className="text-xs text-muted-foreground">Secure proof submission</div>
             </div>
           </div>

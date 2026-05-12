@@ -1,11 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import ExcelJS from "exceljs";
 import {
   supabaseAdmin,
   requireAdmin,
   scopeRegion,
   safeName,
-  dateFolder,
   extFromMime,
 } from "@/lib/proofs.server";
 import {
@@ -252,21 +252,20 @@ export const getBulkZip = createServerFn({ method: "POST" })
 
     const proofByMdn = new Map(rows.map((r) => [r.mdn, r]));
 
-    // Build files
+    // Build files — structure: Region / mdn.ext
     const files: Record<string, Uint8Array> = {};
     for (const row of rows) {
       const { data: blob, error: dErr } = await supabaseAdmin.storage
         .from("payment-proofs")
         .download(row.storage_path);
       if (dErr || !blob) continue;
-      const folder = `${dateFolder(row.uploaded_at)}/${safeName(row.region)}`;
+      const folder = safeName(row.region);
       const fname = `${safeName(row.mdn)}.${extFromMime(row.mime_type)}`;
       files[`${folder}/${fname}`] = new Uint8Array(await blob.arrayBuffer());
     }
     if (Object.keys(files).length === 0) throw new Error("Failed to fetch files.");
 
     // Build Excel summary with ALL customers + proof status
-    const { default: ExcelJS } = await import("exceljs");
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet("Customers");
     ws.columns = [

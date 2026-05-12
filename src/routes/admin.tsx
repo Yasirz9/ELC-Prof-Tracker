@@ -59,8 +59,8 @@ import { toPng } from "html-to-image";
 export const Route = createFileRoute("/admin")({
   head: () => ({
     meta: [
-      { title: "Admin · Payment Proofs" },
-      { name: "description", content: "Admin dashboard for payment proof submissions." },
+      { title: "Admin · ELC Prof Tracker" },
+      { name: "description", content: "Admin dashboard for ELC Prof Tracker." },
       { name: "robots", content: "noindex" },
     ],
   }),
@@ -140,7 +140,7 @@ function LoginCard() {
             >
               <ShieldCheck className="h-5 w-5" />
             </div>
-            <span className="font-semibold">Admin access</span>
+            <span className="font-semibold">ELC Prof Tracker</span>
           </div>
           <CardTitle>Sign in</CardTitle>
           <CardDescription>Authorized admins only.</CardDescription>
@@ -345,16 +345,17 @@ function Dashboard() {
           toDate: toDate ? new Date(toDate + "T23:59:59.999").toISOString() : undefined,
         },
       });
-      const bin = atob(res.base64);
-      const bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const bytes = Uint8Array.from(atob(res.base64), (c) => c.charCodeAt(0));
       const blob = new Blob([bytes], { type: "application/zip" });
+      const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
+      a.href = url;
       const tag = executiveSales || (region === "all" ? "all" : region);
-      a.download = `payment-proofs-${tag}-${new Date().toISOString().slice(0, 10)}.zip`;
+      a.download = `elc-prof-tracker-${tag}-${new Date().toISOString().slice(0, 10)}.zip`;
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(a.href);
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
       toast.success(`Downloaded ${res.count} files (Excel summary included).`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "ZIP failed");
@@ -428,7 +429,7 @@ function Dashboard() {
               <ShieldCheck className="h-5 w-5" />
             </div>
             <div>
-              <div className="text-lg font-semibold leading-tight">Admin Dashboard</div>
+              <div className="text-lg font-semibold leading-tight">ELC Prof Tracker</div>
               <div className="text-xs text-muted-foreground">
                 {me.role === "super_admin"
                   ? "Super Admin · all regions"
